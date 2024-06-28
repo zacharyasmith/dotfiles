@@ -78,6 +78,6 @@ _fzf_complete_dir_notrigger() {
 # bind -m emacs-standard -x '"\C-x\C-f": "_fzf_complete_file_notrigger f"'
 # bind -m emacs-standard -x '"\C-x\C-d": "_fzf_complete_file_notrigger d"'
 
+export PATH="$PATH:/Users/zach/.cargo/bin"
 eval "$(starship init zsh)"
 eval "$(/opt/homebrew/bin/brew shellenv)"
-export PATH="$PATH:/Users/zach/.cargo/bin"
