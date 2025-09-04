@@ -78,6 +78,13 @@ _fzf_complete_dir_notrigger() {
 # bind -m emacs-standard -x '"\C-x\C-f": "_fzf_complete_file_notrigger f"'
 # bind -m emacs-standard -x '"\C-x\C-d": "_fzf_complete_file_notrigger d"'
 
+[ -n "$EAT_SHELL_INTEGRATION_DIR" ] && \
+  source "$EAT_SHELL_INTEGRATION_DIR/zsh"
+
 export PATH="$PATH:/Users/zach/.cargo/bin"
-eval "$(starship init zsh)"
 eval "$(/opt/homebrew/bin/brew shellenv)"
+eval "$(starship init zsh)"
+
+# Created by `pipx` on 2024-11-28 18:13:15
+export PATH="$PATH:/Users/zach/.local/bin"
+autoload -U compinit; compinit

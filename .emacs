@@ -109,17 +109,10 @@
 
 ;; ---------- THEME ----------
 ;; zenburn https://github.com/bbatsov/zenburn-emacs
-(use-package zenburn-theme
+(use-package vscode-dark-plus-theme
   :ensure t
-  :load-path "themes"
   :config
-  (load-theme 'zenburn t)
-  ;; use variable-pitch fonts for some headings and titles
-  (setq zenburn-use-variable-pitch t)
-  ;; scale headings in org-mode
-  (setq zenburn-scale-org-headlines t)
-  ;; scale headings in outline-mode
-  (setq zenburn-scale-outline-headlines t))
+  (load-theme 'vscode-dark-plus t))
 
 ;; Hide the scroll bar
 (if (fboundp 'scroll-bar-mode)
@@ -178,7 +171,12 @@
 ;; ---------- GIT ----------
 (use-package magit
   :ensure t)
-
+(use-package difftastic
+  :config
+  ;; Add commands to a `magit-difftastic'
+  (transient-append-suffix 'magit-diff '(-1 -1)
+    [("D" "Difftastic diff (dwim)" difftastic-magit-diff)
+     ("S" "Difftastic show" difftastic-magit-show)]))
 ;; ---------- PROJECTILE ----------
 (use-package projectile
   :ensure t
@@ -539,20 +537,38 @@
   (global-tree-sitter-mode))
 
 
+;; ---------- HURL ------------
+(straight-use-package
+ '(hurl-mode :type git :host github :repo "jaszhe/hurl-mode"))
+(use-package hurl-mode
+  :mode "\\.hurl\\'")
+
 ;; ---------- TRAMP ----------
 (use-package counsel-tramp
   :ensure t
   :config
   (setq tramp-default-method "ssh")
   (define-key global-map (kbd "C-c C-s") 'counsel-tramp))
-(use-package docker-tramp
-  :ensure t)
 
-;; ---------- VTERM ----------
-(use-package vterm
-  :ensure t
-  :ensure-system-package
-  (cmake . "brew install cmake"))
+;; --------- CLAUDE ----------
+(use-package claude-code-ide
+  :straight (:type git :host github :repo "manzaltu/claude-code-ide.el")
+  :bind ("C-c '" . claude-code-ide-menu) ; Set your favorite keybinding
+  :config
+  (claude-code-ide-emacs-tools-setup)
+  (setq claude-code-ide-terminal-backend 'eat
+	claude-code-ide-enable-mcp-server t)) ; Optionally enable Emacs MCP tools
+
+;; ---------- EAT ----------
+(straight-use-package
+ '(eat :type git
+       :host codeberg
+       :repo "akib/emacs-eat"
+       :files ("*.el" ("term" "term/*.el") "*.texi"
+               "*.ti" ("terminfo/e" "terminfo/e/*")
+               ("terminfo/65" "terminfo/65/*")
+               ("integration" "integration/*")
+               (:exclude ".dir-locals.el" "*-tests.el"))))
 
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
