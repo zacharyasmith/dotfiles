@@ -1,4 +1,4 @@
-;;; .emacs --- Emacs Config.
+;; .emacs --- Emacs Config.
 ;;; Commentary:
 ;;; Zach's Emacs configuration.
 ;;; Code:
@@ -37,6 +37,9 @@
 (setq x-stretch-cursor t)
 ;; Dont ask to follow symlink in git
 (setq vc-follow-symlinks t)
+(unless (display-graphic-p)
+  (xterm-mouse-mode 1))
+(setq xterm-extra-capabilities '(getSelection setSelection modifyOtherKeys))
 ;; Check (on save) whether the file edited contains a shebang, if yes,
 ;; make it executable from
 ;; http://mbork.pl/2015-01-10_A_few_random_Emacs_tips
@@ -53,6 +56,7 @@
                   1 font-lock-warning-face t))))))
 
 ;; install straight
+(setq warning-minimum-level :emergency)
 (defvar bootstrap-version)
 (let ((bootstrap-file
        (expand-file-name "straight/repos/straight.el/bootstrap.el" user-emacs-directory))
@@ -71,9 +75,6 @@
 ;; hookup with straight use-package
 (straight-use-package 'use-package)
 (setq straight-use-package-by-default t)
-;; https://github.com/jwiegley/use-package#getting-started
-(use-package use-package-ensure-system-package
-  :ensure t)
 
 ;; ---------- YAML-MODE ----------
 (use-package yaml-mode
@@ -109,10 +110,11 @@
 
 ;; ---------- THEME ----------
 ;; zenburn https://github.com/bbatsov/zenburn-emacs
-(use-package vscode-dark-plus-theme
-  :ensure t
-  :config
-  (load-theme 'vscode-dark-plus t))
+ (use-package gruvbox-theme
+   :ensure t
+   :config
+ (load-theme 'gruvbox-dark-hard t))
+
 
 ;; Hide the scroll bar
 (if (fboundp 'scroll-bar-mode)
@@ -170,20 +172,34 @@
 
 ;; ---------- GIT ----------
 (use-package magit
-  :ensure t)
-(use-package difftastic
+  :ensure t
   :config
-  ;; Add commands to a `magit-difftastic'
-  (transient-append-suffix 'magit-diff '(-1 -1)
-    [("D" "Difftastic diff (dwim)" difftastic-magit-diff)
-     ("S" "Difftastic show" difftastic-magit-show)]))
+  (setq magit-module-section nil
+	magit-section-initial-visibility-alist '((modules . show))))
+(use-package difftastic
+  :ensure t
+  :vc (:url "https://github.com/pkryger/difftastic.el.git"
+	    :rev :newest)
+  :config (difftastic-bindings-mode))
+
+;; ---------- RIPGREP ----------
+(use-package ripgrep
+  :ensure t)
+
 ;; ---------- PROJECTILE ----------
 (use-package projectile
   :ensure t
+  :init
+  (projectile-mode +1)
+  :bind (:map projectile-mode-map
+	      ("C-c p" . projectile-command-map))
   :config
-  (define-key projectile-mode-map (kbd "C-c p") 'projectile-command-map)
-  (setq projectile-completion-system 'ivy)
-  (projectile-mode +1))
+  (setq projectile-completion-system 'ivy
+	projectile-enable-cmake-presets t
+	projectile-per-project-compilation-buffer t))
+
+(use-package projectile-ripgrep
+  :ensure t)
 
 ;; --------- TREEMACS ---------
 (use-package treemacs
@@ -247,15 +263,6 @@
 
   (advice-add 'compilation-filter :around #'my/advice-compilation-filter))
 
-;; ---------- PROJECTILE MODE ----------
-(use-package projectile
-  :ensure t
-  :init
-  (projectile-mode +1)
-  :bind (:map projectile-mode-map
-              ("s-p" . projectile-command-map)
-              ("C-c p" . projectile-command-map)))
-
 ;; ----------- JSON MODE ---------------
 (use-package json-mode
   :ensure t
@@ -276,7 +283,7 @@
 	    (local-set-key (kbd "C-x C-s") 'json-save-buffer)))
 
 ;; ----------- PYTHON MODE ---------------
-(use-package python-pytest)
+;; (use-package python-pytest)
 (defun python-save-buffer ()
     "Format before save."
     (interactive)
@@ -286,11 +293,50 @@
 	  (lambda ()
 	    (local-set-key (kbd "C-c C-t") 'python-pytest-dispatch)
 	    (local-set-key (kbd "C-x C-s") 'save-buffer)))
+;; language server plugin
+(require 'project)
+(use-package pyvenv
+  :ensure t
+  :config
+  ;; Function to find and activate uv virtual environment
+  (defun activate-uv-venv ()
+    "Activate uv virtual environment for current project."
+    (interactive)
+    (let* ((project-root (or (locate-dominating-file default-directory "pyproject.toml")
+			     (locate-dominating-file default-directory ".venv")))
+           (venv-path (when project-root
+			(expand-file-name ".venv" project-root))))
+      (when (and venv-path (file-exists-p venv-path))
+	(pyvenv-activate venv-path)
+	(message "Activated uv virtual environment: %s" venv-path)))))
+(use-package lsp-pyright
+  :ensure t
+  :hook (python-mode
+	 .(lambda ()
+	    (activate-uv-venv)
+            (setq lsp-ruff-server-command "NAN"
+		  lsp-pyright-langserver-command "basedpyright"
+		  lsp-pyright-use-library-code-for-types t
+		  lsp-pyright-disable-language-service nil
+		  lsp-pyright-disable-organize-imports nil)
+            (lsp))))
+(use-package python-mode
+  :mode "\\.py\\'")
+;; ---------- MARKDOWN ----------
+(use-package markdown-mode
+  :ensure t
+  :mode ("README\\.md\\'" . gfm-mode)
+  :init (setq markdown-command "multimarkdown")
+  :bind (:map markdown-mode-map
+         ("C-c C-e" . markdown-do)))
 
 ;; ----------- COMPANY / LSP MODE / FLYCHECK ---------------
 (use-package flycheck
   :ensure t
-  :init (global-flycheck-mode))
+  :init (global-flycheck-mode)
+  :config
+  (setq
+   flycheck-python-ruff-executable "ruff"))
 
 ;; company mode
 (use-package company
@@ -330,32 +376,35 @@
   (prescient-persist-mode t))
 
 ;; language server protocol
+;; (use-package lsp-bridge
+;;   :straight '(lsp-bridge :type git :host github :repo "manateelazycat/lsp-bridge"
+;;             :files (:defaults "*.el" "*.py" "acm" "core" "langserver" "multiserver" "resources")
+;;             :build (:not compile))
+;;   :init
+;;   (global-lsp-bridge-mode))
+
 (use-package lsp-mode
   :init
   ;; set prefix for lsp-command-keymap
   (setq lsp-keymap-prefix "C-c l")
   :hook (;; replace xxx-mode with concrete major-mode(e. g. python-mode)
-         (python-mode . lsp)
 	 (json-mode . lsp)
 	 (rust-mode . lsp)
+	 (c++-mode . lsp)
 	 (lsp-mode . lsp-enable-which-key-integration))
   :config
-  (setq
+  (define-key lsp-mode-map (kbd "C-c l") lsp-command-map)
+  (require 'lsp-clients)
+  (setq 
    lsp-log-io nil
-   lsp-pylsp-plugins-flake8-enabled nil
-   lsp-pylsp-plugins-pydocstyle-enabled nil
-   lsp-pylsp-plugins-mccabe-enabled nil
-   lsp-pylsp-plugins-rope-completion-enabled t
-   lsp-pylsp-plugins-yapf-enabled t
    lsp-idle-delay 0.500
-   lsp-pylsp-rename-backend 'rope
+   lsp-treemacs-sync-mode 1
    ;; performance stuff
    lsp-prefer-flymake nil
    lsp-enable-snippet t)
   :commands lsp
-  :ensure-system-package
-  (pylsp . "python -m pip install python-lsp-server[yapf,flake8,rope,pydocstyle]"))
-(remove-hook 'python-mode-hook 'lsp)
+  )
+
 (use-package lsp-ui
   :config (setq lsp-ui-sideline-show-hover nil
 		lsp-ui-sideline-show-symbol t
@@ -369,28 +418,28 @@
   :commands lsp-ui-mode)
 (use-package lsp-ivy
   :commands lsp-ivy-workspace-symbol)
-;; debugger
+debugger
 (use-package dap-mode
   :after lsp-mode
   :commands dap-debug
   :hook ((python-mode . dap-ui-mode)
 	 (python-mode . dap-mode))
   :config
-  (eval-when-compile
-    (require 'cl))
   (require 'dap-python)
   (require 'dap-lldb)
+  (require 'dap-cpptools)
   )
-;; language server plugin
-(use-package python-mode
-  :mode "\\.py\\'")
+;; C++
+(use-package clang-format
+  :ensure t
+  :config
+  (setq clang-format-fallback-style "llvm"))
+(setq lsp-clangd-binary-path "/usr/bin/clangd-20"
+      lsp-clangd-version "20.1.8"
+      lsp-cmake-server-command "/home/zach/.venv/cmake-language-server/bin/cmake-language-server")
 
 ;; ---------- RUST ----------
 (use-package rustic
-  :ensure t)
-
-;; ---------- PHP ----------
-(use-package php-mode
   :ensure t)
 
 ;; ---------- DOCKERFILE ----------
@@ -501,11 +550,6 @@
   :config
   (yas-reload-all))
 
-;; ---------- WS BUTLER ----------
-(use-package ws-butler
-  :ensure t
-  :config
-  (ws-butler-global-mode 1))
 
 ;; ---------- SMART PARENS ----------
 (use-package smartparens
@@ -518,6 +562,27 @@
   (define-key smartparens-mode-map (kbd "C-M-b") 'sp-backward-sexp)
   (define-key smartparens-mode-map (kbd "C-M-n") 'sp-down-sexp)
   (define-key smartparens-mode-map (kbd "C-M-p") 'sp-up-sexp))
+
+;; ---------- DWARF MODE ----------
+(let ((custom-file "~/dotfiles/dwarf-mode.el"))
+  (when (file-exists-p custom-file)
+    (load custom-file)))
+(require 'dwarf-mode)
+
+(defun my/inspect-shared-symbols (file)
+  "Show global/dynamic symbols in the shared object FILE."
+  (interactive "fShared object or static library: ")
+  (let ((buf (get-buffer-create "*Symbols*")))
+    (with-current-buffer buf
+      (read-only-mode -1)
+      (erase-buffer)
+      (let ((exit-code
+             (call-process "nm" nil buf nil "-gDC" file)))
+        (if (not (zerop exit-code))
+            (call-process "readelf" nil buf nil "-WsC" file)))
+      (goto-char (point-min)))  ;; if you define or reuse a mode for nm-like listing
+    (pop-to-buffer buf)))
+
 
 ;; ---------- RAINBOW DELIMITERS ----------
 (use-package rainbow-delimiters
@@ -535,7 +600,6 @@
   :ensure t
   :config
   (global-tree-sitter-mode))
-
 
 ;; ---------- HURL ------------
 (straight-use-package
@@ -570,12 +634,36 @@
                ("integration" "integration/*")
                (:exclude ".dir-locals.el" "*-tests.el"))))
 
-(custom-set-faces
- ;; custom-set-faces was added by Custom.
- ;; If you edit it by hand, you could mess it up, so be careful.
- ;; Your init file should contain only one such instance.
- ;; If there is more than one, they won't work right.
- '(default ((t (:inherit nil :stipple nil :background "#3F3F3F" :foreground "#DCDCCC" :inverse-video nil :box nil :strike-through nil :extend nil :overline nil :underline nil :slant normal :weight normal :height 130 :width normal :foundry "nil" :family "FiraCode Nerd Font")))))
+;; ---------- EPUB ----------
+(use-package nov
+  :demand t
+  :config
+  :mode "\\.epub\\'"
+  :config
+  (defun my-nov-font-setup ()
+    (face-remap-add-relative 'variable-pitch :family "DejaVu Serif"
+                             :height 1.0))
+  (setq
+   nov-text-width 80
+   visual-fill-column-center-text t)
+  (add-hook 'nov-mode-hook 'my-nov-font-setup)
+  )
+
+(defun copy-selected-text (start end)
+  (interactive "r")
+    (if (use-region-p)
+        (let ((text (buffer-substring-no-properties start end)))
+            (shell-command (concat "echo '" text "' | clip.exe")))))
+
+;; ---------- RAINBOW ----------
+(use-package csv-mode
+  :ensure t)
+(straight-use-package
+ '(rainbow-csv-mode :type git :host github :repo "emacs-vs/rainbow-csv"))
+(use-package rainbow-csv-mode
+  :ensure t
+  :mode "\\.csv\\'")
+
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
@@ -592,7 +680,33 @@
      (:name "drafts" :query "tag:draft" :key "d")
      (:name "all mail" :query "*" :key "a")
      (:name "omscs-orientation" :query "tag:omscs and tag:orientation")))
- '(python-pytest-executable "poetry run pytest --capture=tee-sys"))
+ '(package-vc-selected-packages
+   '((difftastic :url "https://github.com/pkryger/difftastic.el.git")))
+ '(python-pytest-executable "poetry run pytest --capture=tee-sys")
+ '(safe-local-variable-values
+   '((projectile-project-package-cmd . ".venv/bin/conan create . && .venv/bin/conan upload deepfrost_long_term_planner/1.0.0 -r ts-conan --only-recipe")
+     (projectile-project-package-cmd . ".venv/bin/conan create . && .venv/bin/conan upload deepfrost_common_services/1.0.0 -r ts-conan --only-recipe")
+     (projectile-project-compilation-cmd . ".venv/bin/conan build . -of build -o '&:build_tests=True'")
+     (projectile-project-configure-cmd . "pre-commit run --all")
+     (projectile-project-compilation-cmd . ".venv/bin/conan build . -of build -o build_tests=True")
+     (projectile-project-configure-cmd . ".venv/bin/conan install .")
+     (projectile-project-compilation-cmd . "conan create .")
+     (projectile-project-configure-cmd . "conan install . --output-dir=build")
+     (projectile-project-compilation-cmd . ".venv/bin/conan create . -pr:h docker -pr:b default")
+     (projectile-project-configure-cmd . ".venv/bin/conan install . -pr:h docker -pr:b default")
+     (projectile-project-compilation-cmd . "conan create . -pr:h docker -pr:b default")
+     (projectile-project-configure-cmd . "conan install . -pr:h docker -pr:b default")
+     (projectile-project-compilation-cmd . "conan create . -pr:h docker_host -pr:b default")
+     (projectile-project-configure-cmd . "conan install . -pr:h docker_host -pr:b default")
+     (projectile-project-run-cmd . "./bin/my_program")
+     (projectile-project-compilation-cmd . "conan create . -pr:h docker_example_host -pr:b docker_example_build")
+     (projectile-project-configure-cmd . "conan install . -pr:h docker_example_host -pr:b docker_example_build"))))
 
 (provide '.emacs)
 ;;; .emacs ends here
+(custom-set-faces
+ ;; custom-set-faces was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ )

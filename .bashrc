@@ -36,6 +36,7 @@ if [ -z "${debian_chroot:-}" ] && [ -r /etc/debian_chroot ]; then
 fi
 
 # set a fancy prompt (non-color, unless we know we "want" color)
+export TERM=xterm-256color
 case "$TERM" in
     xterm-color|*-256color) color_prompt=yes;;
 esac
@@ -88,8 +89,9 @@ fi
 #export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 
 # some more ls aliases
-alias ll='ls -alF'
-alias la='ls -A'
+#alias ll='ls -alF'
+alias ll='eza -h  -l --smart-group --git --git-repos --color-scale --color-scale-mode gradient'
+alias la='ll -aa'
 alias l='ls -CF'
 
 # Add an "alert" alias for long running commands.  Use like so:
@@ -115,9 +117,59 @@ if ! shopt -oq posix; then
     . /etc/bash_completion
   fi
 fi
+
+# my custom functions
+gssub() {
+  git submodule foreach --quiet --recursive '
+    printf "\n== %s ==\n" "$displaypath"
+    git status -sb
+  '
+}
+
+gscommit() {
+  msg="${1:-WIP}"
+  # commit inside submodules that have staged or unstaged changes
+  git submodule foreach --recursive '
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+      git add -A
+      git commit -m "'"${msg//\'/\'\\\'\'}"'" || true
+    fi
+  '
+  # record the updated gitlinks in the superproject
+  git add .
+  git commit -m "$msg" || true
+}
+
+gspush() {
+  git submodule foreach --recursive '
+    if git rev-parse --abbrev-ref @{u} >/dev/null 2>&1; then
+      git push || true
+    fi
+  '
+  git push --recurse-submodules=on-demand
+}
+
+
+
 . "$HOME/.cargo/env"
 eval "$(starship init bash)"
 
 export EDITOR="emacsclient -nw -a ''"
 alias emt="$EDITOR"
+alias buildenv="docker run --rm -it -v /opt/trustedspace/tsdam-manager-cpp:/home/ubuntu/tsdam -v tmp:/data/db buildenvironment"
+alias tsu="source ~/projects/trusted-space-utilities/.env && uv run -w ~/projects/trusted-space-utilities/"
 
+[ -f ~/.fzf.bash ] && source ~/.fzf.bash
+# Preview file content using bat (https://github.com/sharkdp/bat)
+export FZF_CTRL_T_OPTS="
+  --walker-skip .git,node_modules,target
+  --preview 'bat -n --color=always {}'
+  --bind 'ctrl-/:change-preview-window(down|hidden|),ctrl-e:become(emacsclient -nw {})'"
+
+# Print tree structure in the preview window
+export FZF_ALT_C_OPTS="
+  --walker-skip .git,node_modules,target
+  --preview 'tree -C {}'"
+export PATH=$HOME/.local/bin:$PATH
+export ZED_ALLOW_EMULATED_GPU=1
+alias zed="WAYLAND_DISPLAY= zed"
