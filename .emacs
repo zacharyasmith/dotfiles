@@ -101,13 +101,6 @@
 (straight-use-package 'key-chord)
 (key-chord-mode 1)
 
-;; ---------- SMART SHIFT ----------
-(straight-use-package
- '(smart-shift :type git :host github :repo "hbin/smart-shift"))
-(use-package smart-shift)
-(key-chord-define-global "<<" 'smart-shift-left)
-(key-chord-define-global ">>" 'smart-shift-right)
-
 ;; ---------- THEME ----------
 ;; zenburn https://github.com/bbatsov/zenburn-emacs
  (use-package gruvbox-theme
@@ -200,6 +193,50 @@
 
 (use-package projectile-ripgrep
   :ensure t)
+
+;; ---------- CMAKE/CONAN ----------
+(straight-use-package
+ '(cmake-integration :type git :host github :repo "darcamo/cmake-integration"))
+(use-package cmake-integration
+  :ensure t
+  :commands (cmake-integration-conan-manage-remotes
+             cmake-integration-conan-list-packages-in-local-cache
+             cmake-integration-search-in-conan-center
+             cmake-integration-transient)
+  :config
+  ;; (cmake-integration-generator "Gnu")
+  (cmake-integration-use-separated-compilation-buffer-for-each-target t)
+  ;; :bind (:map c++-mode-map
+  ;;             ([f5] . cmake-integration-transient) ;; Open main transient menu
+  ;;             ([M-f9] . cmake-integration-select-current-target) ;; Ask for target
+  ;;             ([f9] . cmake-integration-save-and-compile-last-target) ;; Recompile last target
+  ;;             ([C-f9] . cmake-integration-run-ctest) ;; Run CTest
+  ;;             ([f10] . cmake-integration-run-last-target) ;; Run last target (with saved args)
+  ;;             ([S-f10] . kill-compilation) ;; Stop compilation
+  ;;             ([C-f10] . cmake-integration-debug-last-target) ;; Debug last target
+  ;;             ([M-f10] . cmake-integration-run-last-target-with-arguments) ;; Run last target with custom args
+  ;;             ([M-f8] . cmake-integration-select-configure-preset) ;; Select and configure preset
+  ;;             ([f8] . cmake-integration-cmake-reconfigure) ;; Reconfigure with last preset
+  ;;             )
+  )
+
+;; ---------- WINUM ----------
+(use-package winum
+  :ensure t
+  :config
+  (winum-mode)
+  (global-set-key (kbd "M-1") 'winum-select-window-1)
+  (global-set-key (kbd "M-2") 'winum-select-window-2)
+  (global-set-key (kbd "M-3") 'winum-select-window-3)
+  (global-set-key (kbd "M-4") 'winum-select-window-4)
+  (global-set-key (kbd "M-5") 'winum-select-window-5)
+  (global-set-key (kbd "M-6") 'winum-select-window-6)
+  )
+(use-package iflipb
+  :ensure t
+  :config
+  (global-set-key (kbd "M-h") 'iflipb-next-buffer)
+  (global-set-key (kbd "M-H") 'iflipb-previous-buffer))
 
 ;; --------- TREEMACS ---------
 (use-package treemacs
@@ -428,6 +465,9 @@ debugger
   (require 'dap-python)
   (require 'dap-lldb)
   (require 'dap-cpptools)
+  (setq gdb-many-windows t
+	gdb-show-main t
+        gdb-debug-log-max 1024)
   )
 ;; C++
 (use-package clang-format
@@ -682,25 +722,7 @@ debugger
      (:name "omscs-orientation" :query "tag:omscs and tag:orientation")))
  '(package-vc-selected-packages
    '((difftastic :url "https://github.com/pkryger/difftastic.el.git")))
- '(python-pytest-executable "poetry run pytest --capture=tee-sys")
- '(safe-local-variable-values
-   '((projectile-project-package-cmd . ".venv/bin/conan create . && .venv/bin/conan upload deepfrost_long_term_planner/1.0.0 -r ts-conan --only-recipe")
-     (projectile-project-package-cmd . ".venv/bin/conan create . && .venv/bin/conan upload deepfrost_common_services/1.0.0 -r ts-conan --only-recipe")
-     (projectile-project-compilation-cmd . ".venv/bin/conan build . -of build -o '&:build_tests=True'")
-     (projectile-project-configure-cmd . "pre-commit run --all")
-     (projectile-project-compilation-cmd . ".venv/bin/conan build . -of build -o build_tests=True")
-     (projectile-project-configure-cmd . ".venv/bin/conan install .")
-     (projectile-project-compilation-cmd . "conan create .")
-     (projectile-project-configure-cmd . "conan install . --output-dir=build")
-     (projectile-project-compilation-cmd . ".venv/bin/conan create . -pr:h docker -pr:b default")
-     (projectile-project-configure-cmd . ".venv/bin/conan install . -pr:h docker -pr:b default")
-     (projectile-project-compilation-cmd . "conan create . -pr:h docker -pr:b default")
-     (projectile-project-configure-cmd . "conan install . -pr:h docker -pr:b default")
-     (projectile-project-compilation-cmd . "conan create . -pr:h docker_host -pr:b default")
-     (projectile-project-configure-cmd . "conan install . -pr:h docker_host -pr:b default")
-     (projectile-project-run-cmd . "./bin/my_program")
-     (projectile-project-compilation-cmd . "conan create . -pr:h docker_example_host -pr:b docker_example_build")
-     (projectile-project-configure-cmd . "conan install . -pr:h docker_example_host -pr:b docker_example_build"))))
+ '(python-pytest-executable "poetry run pytest --capture=tee-sys"))
 
 (provide '.emacs)
 ;;; .emacs ends here
