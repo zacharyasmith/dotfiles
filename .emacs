@@ -206,6 +206,7 @@
   :config
   ;; (cmake-integration-generator "Gnu")
   (cmake-integration-use-separated-compilation-buffer-for-each-target t)
+  (global-set-key (kbd "C-c c") 'cmake-integration-transient)
   ;; :bind (:map c++-mode-map
   ;;             ([f5] . cmake-integration-transient) ;; Open main transient menu
   ;;             ([M-f9] . cmake-integration-select-current-target) ;; Ask for target
@@ -703,6 +704,13 @@ debugger
 (use-package rainbow-csv-mode
   :ensure t
   :mode "\\.csv\\'")
+
+;; custom variables
+(put 'projectile-project-package-cmd 'safe-local-variable #'stringp)
+(put 'projectile-project-compilation-cmd 'safe-local-variable #'stringp)
+(put 'projectile-project-run-cmd 'safe-local-variable #'stringp)
+(put 'projectile-project-configure-cmd 'safe-local-variable #'stringp)
+(put 'dockerfile-image-name 'safe-local-variable #'stringp)
 
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
