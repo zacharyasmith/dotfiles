@@ -205,7 +205,7 @@
              cmake-integration-transient)
   :config
   ;; (cmake-integration-generator "Gnu")
-  (cmake-integration-use-separated-compilation-buffer-for-each-target t)
+  (setq cmake-integration-use-separated-compilation-buffer-for-each-target t)
   (global-set-key (kbd "C-c c") 'cmake-integration-transient)
   ;; :bind (:map c++-mode-map
   ;;             ([f5] . cmake-integration-transient) ;; Open main transient menu
@@ -340,13 +340,15 @@
   (defun activate-uv-venv ()
     "Activate uv virtual environment for current project."
     (interactive)
-    (let* ((project-root (or (locate-dominating-file default-directory "pyproject.toml")
-			     (locate-dominating-file default-directory ".venv")))
+    (let* ((project-root (or (locate-dominating-file default-directory ".venv")
+			     (locate-dominating-file default-directory "pyproject.toml")
+			     ))
            (venv-path (when project-root
 			(expand-file-name ".venv" project-root))))
       (when (and venv-path (file-exists-p venv-path))
 	(pyvenv-activate venv-path)
-	(message "Activated uv virtual environment: %s" venv-path)))))
+	(message "Activated uv virtual environment: %s" venv-path))))
+  )
 (use-package lsp-pyright
   :ensure t
   :hook (python-mode
@@ -705,6 +707,17 @@ debugger
   :ensure t
   :mode "\\.csv\\'")
 
+;; ---------- UUID ----------
+(straight-use-package
+ '(insert-uuid :type git :host github :repo "theesfeld/insert-uuid"))
+(use-package insert-uuid
+  :ensure t
+  :bind (("C-c u" . insert-uuid)
+         ("C-c U" . insert-uuid-random))
+  :custom
+  (insert-uuid-default-version 4)
+  (insert-uuid-uppercase nil))
+
 ;; custom variables
 (put 'projectile-project-package-cmd 'safe-local-variable #'stringp)
 (put 'projectile-project-compilation-cmd 'safe-local-variable #'stringp)
@@ -730,7 +743,14 @@ debugger
      (:name "omscs-orientation" :query "tag:omscs and tag:orientation")))
  '(package-vc-selected-packages
    '((difftastic :url "https://github.com/pkryger/difftastic.el.git")))
- '(python-pytest-executable "poetry run pytest --capture=tee-sys"))
+ '(python-pytest-executable "poetry run pytest --capture=tee-sys")
+ '(safe-local-variable-values
+   '((cmake-integration-current-target . "coverage")
+     (projectile-project-package-cmd function stringp)
+     (projectile-project-compilation-cmd function stringp)
+     (projectile-project-run-cmd function stringp)
+     (projectile-project-configure-cmd function stringp)
+     (dockerfile-image-name function stringp))))
 
 (provide '.emacs)
 ;;; .emacs ends here
