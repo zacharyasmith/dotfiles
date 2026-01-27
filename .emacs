@@ -71,6 +71,7 @@
   (load bootstrap-file nil 'nomessage))
 
 (straight-use-package 'org)
+(savehist-mode)
 
 ;; hookup with straight use-package
 (straight-use-package 'use-package)
