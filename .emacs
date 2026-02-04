@@ -3,6 +3,18 @@
 ;;; Zach's Emacs configuration.
 ;;; Code:
 
+;; required for clipboard issues with Emacs >= 29 on macos
+(when (eq system-type 'darwin)
+  (setq xterm-extra-capabilities nil)
+  (setq select-enable-clipboard nil)
+  (setq xterm-set-window-title nil)
+  (add-hook 'tty-setup-hook
+            (lambda ()
+              (setq interprogram-paste-function nil)
+              (setq interprogram-cut-function nil)
+              (when (fboundp 'xterm-osc-clipboard-mode)
+		(xterm-osc-clipboard-mode -1)))))
+
 (setq package-enable-at-startup nil)
 
 ;; utf-8
@@ -607,27 +619,6 @@ debugger
   (define-key smartparens-mode-map (kbd "C-M-n") 'sp-down-sexp)
   (define-key smartparens-mode-map (kbd "C-M-p") 'sp-up-sexp))
 
-;; ---------- DWARF MODE ----------
-(let ((custom-file "~/dotfiles/dwarf-mode.el"))
-  (when (file-exists-p custom-file)
-    (load custom-file)))
-(require 'dwarf-mode)
-
-(defun my/inspect-shared-symbols (file)
-  "Show global/dynamic symbols in the shared object FILE."
-  (interactive "fShared object or static library: ")
-  (let ((buf (get-buffer-create "*Symbols*")))
-    (with-current-buffer buf
-      (read-only-mode -1)
-      (erase-buffer)
-      (let ((exit-code
-             (call-process "nm" nil buf nil "-gDC" file)))
-        (if (not (zerop exit-code))
-            (call-process "readelf" nil buf nil "-WsC" file)))
-      (goto-char (point-min)))  ;; if you define or reuse a mode for nm-like listing
-    (pop-to-buffer buf)))
-
-
 ;; ---------- RAINBOW DELIMITERS ----------
 (use-package rainbow-delimiters
   :ensure t
@@ -693,11 +684,41 @@ debugger
   (add-hook 'nov-mode-hook 'my-nov-font-setup)
   )
 
+(defun paste-from-system-clipboard ()
+  (interactive)
+  (let ((text
+         (cond
+          ((eq system-type 'darwin)
+           (shell-command-to-string "pbpaste"))
+          ((eq system-type 'gnu/linux)
+           (shell-command-to-string "xclip -selection clipboard -o"))
+          ((or (eq system-type 'windows-nt)
+               (string-match-p "WSL" (or (getenv "WSL_DISTRO_NAME") "")))
+           (shell-command-to-string "powershell.exe -command Get-Clipboard")))))
+    (when text
+      (insert (string-trim-right text)))))
+
 (defun copy-selected-text (start end)
   (interactive "r")
-    (if (use-region-p)
-        (let ((text (buffer-substring-no-properties start end)))
-            (shell-command (concat "echo '" text "' | clip.exe")))))
+  (when (use-region-p)
+    (let ((text (buffer-substring-no-properties start end)))
+      (cond
+       ((eq system-type 'darwin)
+        (with-temp-buffer
+          (insert text)
+          (call-process-region (point-min) (point-max) "pbcopy")))
+       ((eq system-type 'gnu/linux)
+        (with-temp-buffer
+          (insert text)
+          (call-process-region (point-min) (point-max) "xclip" nil nil nil "-selection" "clipboard")))
+       ((or (eq system-type 'windows-nt)
+            (string-match-p "WSL" (or (getenv "WSL_DISTRO_NAME") "")))
+        (with-temp-buffer
+          (insert text)
+          (call-process-region (point-min) (point-max) "clip.exe")))))))
+
+(global-set-key (kbd "C-c c") 'copy-selected-text)
+(global-set-key (kbd "C-c v") 'paste-from-system-clipboard)
 
 ;; ---------- RAINBOW ----------
 (use-package csv-mode
@@ -719,6 +740,16 @@ debugger
   (insert-uuid-default-version 4)
   (insert-uuid-uppercase nil))
 
+;; ---------- CLAUDE ----------
+(use-package claude-code-ide
+  :straight (:type git :host github :repo "manzaltu/claude-code-ide.el")
+  :bind ("C-c '" . claude-code-ide-menu) ; Set your favorite keybinding
+  :config
+  (claude-code-ide-emacs-tools-setup)) ; Optionally enable Emacs MCP tools
+
+(use-package edit-indirect.el
+  :straight (:type git :host github :repo "Fanael/edit-indirect"))
+
 ;; custom variables
 (put 'projectile-project-package-cmd 'safe-local-variable #'stringp)
 (put 'projectile-project-compilation-cmd 'safe-local-variable #'stringp)
@@ -731,27 +762,8 @@ debugger
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
- '(column-number-mode t)
- '(global-display-line-numbers-mode t)
- '(mood-line-show-encoding-information t)
- '(notmuch-saved-searches
-   '((:name "inbox" :query "tag:inbox" :key "i")
-     (:name "unread" :query "tag:unread" :key "u")
-     (:name "flagged" :query "tag:flagged" :key "f")
-     (:name "sent" :query "tag:sent" :key "t")
-     (:name "drafts" :query "tag:draft" :key "d")
-     (:name "all mail" :query "*" :key "a")
-     (:name "omscs-orientation" :query "tag:omscs and tag:orientation")))
  '(package-vc-selected-packages
-   '((difftastic :url "https://github.com/pkryger/difftastic.el.git")))
- '(python-pytest-executable "poetry run pytest --capture=tee-sys")
- '(safe-local-variable-values
-   '((cmake-integration-current-target . "coverage")
-     (projectile-project-package-cmd function stringp)
-     (projectile-project-compilation-cmd function stringp)
-     (projectile-project-run-cmd function stringp)
-     (projectile-project-configure-cmd function stringp)
-     (dockerfile-image-name function stringp))))
+   '((difftastic :url "https://github.com/pkryger/difftastic.el.git"))))
 
 (provide '.emacs)
 ;;; .emacs ends here
