@@ -17,6 +17,9 @@
 
 (setq package-enable-at-startup nil)
 
+;; Add ~/.local/bin to exec-path for uv-installed tools (basedpyright, ruff, etc.)
+(add-to-list 'exec-path (expand-file-name "~/.local/bin"))
+
 ;; utf-8
 (set-language-environment "UTF-8")
 (set-default-coding-systems 'utf-8)
@@ -362,17 +365,6 @@
 	(pyvenv-activate venv-path)
 	(message "Activated uv virtual environment: %s" venv-path))))
   )
-(use-package lsp-pyright
-  :ensure t
-  :hook (python-mode
-	 .(lambda ()
-	    (activate-uv-venv)
-            (setq lsp-ruff-server-command "NAN"
-		  lsp-pyright-langserver-command "basedpyright"
-		  lsp-pyright-use-library-code-for-types t
-		  lsp-pyright-disable-language-service nil
-		  lsp-pyright-disable-organize-imports nil)
-            (lsp))))
 (use-package python-mode
   :mode "\\.py\\'")
 ;; ---------- MARKDOWN ----------
@@ -388,8 +380,10 @@
   :ensure t
   :init (global-flycheck-mode)
   :config
-  (setq
-   flycheck-python-ruff-executable "ruff"))
+  ;; Disable flycheck-ruff for Python - ruff-lsp provides diagnostics via LSP
+  (add-hook 'python-mode-hook
+            (lambda ()
+              (setq-local flycheck-disabled-checkers '(python-ruff)))))
 
 ;; company mode
 (use-package company
@@ -490,9 +484,18 @@ debugger
   :ensure t
   :config
   (setq clang-format-fallback-style "llvm"))
-(setq lsp-clangd-binary-path "/usr/bin/clangd-20"
-      lsp-clangd-version "20.1.8"
-      lsp-cmake-server-command "/home/zach/.venv/cmake-language-server/bin/cmake-language-server")
+(setq lsp-cmake-server-command (expand-file-name "~/.local/bin/cmake-language-server"))
+;; python
+(use-package lsp-pyright
+  :ensure t
+  :hook (python-mode
+	 .(lambda ()
+	    (activate-uv-venv)
+            (setq lsp-pyright-langserver-command "basedpyright"
+		  lsp-pyright-use-library-code-for-types t
+		  lsp-pyright-disable-language-service nil
+		  lsp-pyright-disable-organize-imports t)  ;; let ruff handle imports
+            (lsp))))
 
 ;; ---------- RUST ----------
 (use-package rustic
@@ -654,9 +657,32 @@ debugger
   :straight (:type git :host github :repo "manzaltu/claude-code-ide.el")
   :bind ("C-c '" . claude-code-ide-menu) ; Set your favorite keybinding
   :config
-  (claude-code-ide-emacs-tools-setup)
   (setq claude-code-ide-terminal-backend 'eat
-	claude-code-ide-enable-mcp-server t)) ; Optionally enable Emacs MCP tools
+	claude-code-ide-enable-mcp-server t
+	claude-code-ide-use-side-window t
+	claude-code-ide-focus-on-open nil
+	claude-code-ide-show-claude-window-in-ediff nil
+	claude-code-ide-prevent-reflow-glitch t )
+
+  (defun my-project-grep (pattern)
+    "Search for PATTERN in the current session's project."
+    (claude-code-ide-mcp-server-with-session-context nil
+      ;; This executes with the session's project directory as default-directory
+      (let* ((project-dir default-directory)
+             (results (shell-command-to-string
+                       (format "rg -n '%s' %s" pattern project-dir))))
+	results)))
+
+  ;; Define and register the tool (automatically added to claude-code-ide-mcp-server-tools)
+  (claude-code-ide-make-tool
+   :function #'my-project-grep
+   :name "my_project_grep"
+   :description "Search for pattern in project files"
+   :args '((:name "pattern"
+		  :type string
+		  :description "Pattern to search for")))
+  
+  (claude-code-ide-emacs-tools-setup) )
 
 ;; ---------- EAT ----------
 (straight-use-package
