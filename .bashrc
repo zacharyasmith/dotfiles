@@ -171,5 +171,11 @@ export FZF_ALT_C_OPTS="
   --walker-skip .git,node_modules,target
   --preview 'tree -C {}'"
 export PATH=$HOME/.local/bin:$PATH
+export PATH=$HOME/.local/opt/emacs/bin:$PATH
 export ZED_ALLOW_EMULATED_GPU=1
 alias zed="WAYLAND_DISPLAY= zed"
+
+# Source machine-specific configuration
+if [ -f "$HOME/.custom.bashrc" ]; then
+    . "$HOME/.custom.bashrc"
+fi

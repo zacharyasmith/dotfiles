@@ -4,16 +4,15 @@
 ;;; Code:
 
 ;; required for clipboard issues with Emacs >= 29 on macos
-(when (eq system-type 'darwin)
-  (setq xterm-extra-capabilities nil)
-  (setq select-enable-clipboard nil)
-  (setq xterm-set-window-title nil)
-  (add-hook 'tty-setup-hook
-            (lambda ()
-              (setq interprogram-paste-function nil)
-              (setq interprogram-cut-function nil)
-              (when (fboundp 'xterm-osc-clipboard-mode)
-		(xterm-osc-clipboard-mode -1)))))
+(setq xterm-extra-capabilities nil)
+(setq select-enable-clipboard nil)
+(setq xterm-set-window-title nil)
+(add-hook 'tty-setup-hook
+          (lambda ()
+            (setq interprogram-paste-function nil)
+            (setq interprogram-cut-function nil)
+            (when (fboundp 'xterm-osc-clipboard-mode)
+	      (xterm-osc-clipboard-mode -1))))
 
 (setq package-enable-at-startup nil)
 
@@ -205,7 +204,33 @@
   :config
   (setq projectile-completion-system 'ivy
 	projectile-enable-cmake-presets t
-	projectile-per-project-compilation-buffer t))
+	projectile-per-project-compilation-buffer t
+	projectile-switch-project-action #'projectile-commander
+	)
+  (def-projectile-commander-method ?s
+				   "Open a *shell* buffer for the project."
+				   ;; This requires a snapshot version of Projectile.
+				   (projectile-run-vterm))
+
+  (def-projectile-commander-method ?c
+				   "Run `compile' in the project."
+				   (projectile-compile-project t))
+
+  (def-projectile-commander-method ?t
+				   "Run `test' in the project."
+				   (projectile-test-project t))
+
+  (def-projectile-commander-method ?F
+				   "Find file in project using fd (ignoring .gitignore)."
+				   (let ((default-directory (projectile-acquire-root)))
+				     (find-file
+				      (completing-read
+				       "Find file (fd): "
+				       (split-string
+					(shell-command-to-string (concat "fd --type f --no-require-git --no-ignore-vcs --hidden "
+									 "-E '.git' -E '.venv' -E '.env'"))
+					"\n" t)))))
+  )
 
 (use-package projectile-ripgrep
   :ensure t)
@@ -657,7 +682,7 @@ debugger
   :straight (:type git :host github :repo "manzaltu/claude-code-ide.el")
   :bind ("C-c '" . claude-code-ide-menu) ; Set your favorite keybinding
   :config
-  (setq claude-code-ide-terminal-backend 'eat
+  (setq claude-code-ide-terminal-backend 'vterm
 	claude-code-ide-enable-mcp-server t
 	claude-code-ide-use-side-window t
 	claude-code-ide-focus-on-open nil
@@ -767,6 +792,8 @@ debugger
   (insert-uuid-uppercase nil))
 
 ;; ---------- CLAUDE ----------
+(use-package vterm
+    :ensure t)
 (use-package claude-code-ide
   :straight (:type git :host github :repo "manzaltu/claude-code-ide.el")
   :bind ("C-c '" . claude-code-ide-menu) ; Set your favorite keybinding
@@ -775,6 +802,75 @@ debugger
 
 (use-package edit-indirect.el
   :straight (:type git :host github :repo "Fanael/edit-indirect"))
+
+
+;; ---------- HELP PAGE ----------
+
+(defvar help-page--exec-cache nil
+  "Cached list of executables found in `exec-path'.")
+
+(defvar help-page--exec-cache-time nil
+  "Time at which `help-page--exec-cache' was last populated.")
+
+(defvar help-page-cache-ttl 300
+  "Seconds before the executable cache is refreshed.")
+
+(defun help-page--executables ()
+  "Return a sorted, deduplicated list of executables on `exec-path'.
+Results are cached for `help-page-cache-ttl' seconds."
+  (if (and help-page--exec-cache
+           help-page--exec-cache-time
+           (< (float-time (time-subtract nil help-page--exec-cache-time))
+              help-page-cache-ttl))
+      help-page--exec-cache
+    (setq help-page--exec-cache-time (current-time)
+          help-page--exec-cache
+          (cl-remove-duplicates
+           (sort
+            (cl-loop for dir in exec-path
+                     when (and dir (file-directory-p dir))
+                     nconc (cl-loop for f in (directory-files dir nil nil t)
+                                    when (and (not (member f '("." "..")))
+                                              (file-executable-p (expand-file-name f dir))
+                                              (not (file-directory-p (expand-file-name f dir))))
+                                    collect f))
+            #'string<)
+           :test #'string=))))
+
+(defun help-page-invalidate-cache ()
+  "Force the executable cache to be refreshed on next `help-page' call."
+  (interactive)
+  (setq help-page--exec-cache nil
+        help-page--exec-cache-time nil)
+  (message "help-page executable cache cleared."))
+
+(defun help-page ()
+  "Display --help output for an executable, formatted with bat.
+Executables are discovered from `exec-path' and presented via
+`completing-read'.  Output is piped through bat for syntax
+highlighting and displayed in a read-only buffer (special-mode)."
+  (interactive)
+  (let* ((cmd (completing-read "Help for: " (help-page--executables) nil t))
+         (buf-name (format "*help: %s*" cmd))
+         (output (shell-command-to-string
+                  (format "%s --help 2>&1 | bat --color always --pager never -l cmd-help --style=plain"
+                          (shell-quote-argument cmd)))))
+    (with-current-buffer (get-buffer-create buf-name)
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert output)
+        (ansi-color-apply-on-region (point-min) (point-max))
+        (goto-char (point-min)))
+      (special-mode))
+    (pop-to-buffer buf-name)))
+(global-set-key (kbd "C-h c") #'help-page)
+(global-set-key (kbd "C-h M") #'man)
+
+;; ---------- MACHINE-LOCAL CONFIG ----------
+;; Load ~/.emacs.d/custom/init.el if present (work-specific packages/settings)
+(let ((custom-init (expand-file-name "custom/init.el" user-emacs-directory)))
+  (when (file-exists-p custom-init)
+    (load custom-init)))
 
 ;; custom variables
 (put 'projectile-project-package-cmd 'safe-local-variable #'stringp)
