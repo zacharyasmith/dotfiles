@@ -94,7 +94,7 @@
 ;; ---------- YAML-MODE ----------
 (use-package yaml-mode
   :ensure t
-  :mode (("\\.ya?ml\\'" . yaml-mode)))
+  :mode ("\\.yml\\'" "\\.yaml\\'"))
 
 
 ;; -------- CADDYFILE -----------
@@ -583,10 +583,14 @@ debugger
   :config
   (setq org-todo-keywords
 	'((sequence "TODO" "IN-PROGRESS" "VERIFY" "|" "DONE" "DELEGATED"))
-	org-directory "~/tower/Zach/org/")
+	org-directory (expand-file-name "~/org/"))
   (load-library "find-lisp")
   (setq org-agenda-files
-	(find-lisp-find-files org-directory "\.org$")))
+	(find-lisp-find-files org-directory "\.org$"))
+  (org-babel-do-load-languages
+   'org-babel-load-languages
+   '((emacs-lisp . t)
+     (shell . t))))
 
 ;; Set the browser in emacs
 (if (getenv "BROWSER")
@@ -682,10 +686,10 @@ debugger
   :straight (:type git :host github :repo "manzaltu/claude-code-ide.el")
   :bind ("C-c '" . claude-code-ide-menu) ; Set your favorite keybinding
   :config
-  (setq claude-code-ide-terminal-backend 'vterm
+  (setq claude-code-ide-terminal-backend 'eat
 	claude-code-ide-enable-mcp-server t
 	claude-code-ide-use-side-window t
-	claude-code-ide-focus-on-open nil
+	claude-code-ide-focus-on-open t
 	claude-code-ide-show-claude-window-in-ediff nil
 	claude-code-ide-prevent-reflow-glitch t )
 
@@ -773,12 +777,13 @@ debugger
 
 ;; ---------- RAINBOW ----------
 (use-package csv-mode
-  :ensure t)
+  :ensure t
+  :mode ("\\.csv\\'"))
 (straight-use-package
  '(rainbow-csv-mode :type git :host github :repo "emacs-vs/rainbow-csv"))
 (use-package rainbow-csv-mode
   :ensure t
-  :mode "\\.csv\\'")
+  :mode ("\\.csv\\'"))
 
 ;; ---------- UUID ----------
 (straight-use-package
