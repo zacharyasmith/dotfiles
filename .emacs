@@ -28,8 +28,13 @@
 (put 'upcase-region 'disabled nil)
 (put 'downcase-region 'disabled nil)
 ;; line/col numbers
+(setq display-line-numbers-type 'relative)
 (global-display-line-numbers-mode)
 (column-number-mode)
+;; Disable line numbers in terminal modes
+(add-hook 'eat-mode-hook (lambda () (display-line-numbers-mode -1)))
+(add-hook 'vterm-mode-hook (lambda () (display-line-numbers-mode -1)))
+(add-hook 'term-mode-hook (lambda () (display-line-numbers-mode -1)))
 ;; delete selection with paste
 (delete-selection-mode 1)
 ;; (when (daemonp)
@@ -214,12 +219,12 @@
 
   (def-projectile-commander-method ?c
 				   "Run `compile' in the project."
-				   (projectile-compile-project t))
+				   (claude-code-ide))
 
-  (def-projectile-commander-method ?t
-				   "Run `test' in the project."
-				   (projectile-test-project t))
-
+  (def-projectile-commander-method ?C
+				   "Run `compile' in the project."
+				   (claude-code-ide-menu))
+  
   (def-projectile-commander-method ?F
 				   "Find file in project using fd (ignoring .gitignore)."
 				   (let ((default-directory (projectile-acquire-root)))
@@ -511,16 +516,16 @@ debugger
   (setq clang-format-fallback-style "llvm"))
 (setq lsp-cmake-server-command (expand-file-name "~/.local/bin/cmake-language-server"))
 ;; python
-(use-package lsp-pyright
-  :ensure t
-  :hook (python-mode
-	 .(lambda ()
-	    (activate-uv-venv)
-            (setq lsp-pyright-langserver-command "basedpyright"
-		  lsp-pyright-use-library-code-for-types t
-		  lsp-pyright-disable-language-service nil
-		  lsp-pyright-disable-organize-imports t)  ;; let ruff handle imports
-            (lsp))))
+;; (use-package lsp-pyright
+;;   :ensure t
+;;   :hook (python-mode
+;; 	 .(lambda ()
+;; 	    (activate-uv-venv)
+;;             (setq lsp-pyright-langserver-command "basedpyright"
+;; 		  lsp-pyright-use-library-code-for-types t
+;; 		  lsp-pyright-disable-language-service nil
+;; 		  lsp-pyright-disable-organize-imports t)  ;; let ruff handle imports
+;;             (lsp))))
 
 ;; ---------- RUST ----------
 (use-package rustic
@@ -582,7 +587,7 @@ debugger
   :ensure org-plus-contrib
   :config
   (setq org-todo-keywords
-	'((sequence "TODO" "IN-PROGRESS" "VERIFY" "|" "DONE" "DELEGATED"))
+	'((sequence "TODO" "IN-PROGRESS" "VERIFY" "|" "DONE" "DELEGATED" "CANCELLED"))
 	org-directory (expand-file-name "~/org/"))
   (load-library "find-lisp")
   (setq org-agenda-files
@@ -890,7 +895,9 @@ highlighting and displayed in a read-only buffer (special-mode)."
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  '(package-vc-selected-packages
-   '((difftastic :url "https://github.com/pkryger/difftastic.el.git"))))
+   '((difftastic :url "https://github.com/pkryger/difftastic.el.git")))
+ '(safe-local-variable-directories
+   '("/opt/trueanomaly/flight_software/FSW_Tools/Functional_Tests/")))
 
 (provide '.emacs)
 ;;; .emacs ends here
