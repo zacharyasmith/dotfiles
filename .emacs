@@ -189,6 +189,16 @@
   :config
   (setq magit-module-section nil
 	magit-section-initial-visibility-alist '((modules . show))))
+
+(with-eval-after-load 'magit
+  ;; Unbind M-1 through M-6 so winum keybindings work in magit buffers
+  (define-key magit-mode-map (kbd "M-1") nil)
+  (define-key magit-mode-map (kbd "M-2") nil)
+  (define-key magit-mode-map (kbd "M-3") nil)
+  (define-key magit-mode-map (kbd "M-4") nil)
+  (define-key magit-mode-map (kbd "M-5") nil)
+  (define-key magit-mode-map (kbd "M-6") nil))
+
 (use-package difftastic
   :ensure t
   :vc (:url "https://github.com/pkryger/difftastic.el.git"
@@ -235,6 +245,10 @@
 					(shell-command-to-string (concat "fd --type f --no-require-git --no-ignore-vcs --hidden "
 									 "-E '.git' -E '.venv' -E '.env'"))
 					"\n" t)))))
+  (def-projectile-commander-method ?m
+				   "Run magit"
+				   (let ((default-directory (projectile-acquire-root)))
+				     (magit-status-setup-buffer)))g
   )
 
 (use-package projectile-ripgrep
@@ -514,6 +528,21 @@ debugger
   :ensure t
   :config
   (setq clang-format-fallback-style "llvm"))
+
+;; ---------- C/C++ MODE FORMATTING ----------
+(defun my/c-mode-common-hook ()
+  "Use clang-format for C/C++ formatting."
+  ;; Basic display settings
+  (setq c-basic-offset 3)
+  (setq indent-tabs-mode nil)
+  (setq tab-width 3)
+  ;; Format buffer with clang-format before saving
+  ;; (add-hook 'before-save-hook 'clang-format-buffer nil t)
+  )
+
+(add-hook 'c-mode-hook 'my/c-mode-common-hook)
+(add-hook 'c++-mode-hook 'my/c-mode-common-hook)
+
 (setq lsp-cmake-server-command (expand-file-name "~/.local/bin/cmake-language-server"))
 ;; python
 ;; (use-package lsp-pyright
@@ -591,11 +620,13 @@ debugger
 	org-directory (expand-file-name "~/org/"))
   (load-library "find-lisp")
   (setq org-agenda-files
-	(find-lisp-find-files org-directory "\.org$"))
+	(find-lisp-find-files org-directory "\.org$")
+	org-babel-python-command "python3")
   (org-babel-do-load-languages
    'org-babel-load-languages
    '((emacs-lisp . t)
-     (shell . t))))
+     (shell . t)
+     (python . t))))
 
 ;; Set the browser in emacs
 (if (getenv "BROWSER")
@@ -696,6 +727,7 @@ debugger
 	claude-code-ide-use-side-window t
 	claude-code-ide-focus-on-open t
 	claude-code-ide-show-claude-window-in-ediff nil
+	claude-code-ide-window-width 100
 	claude-code-ide-prevent-reflow-glitch t )
 
   (defun my-project-grep (pattern)
@@ -728,6 +760,15 @@ debugger
                ("terminfo/65" "terminfo/65/*")
                ("integration" "integration/*")
                (:exclude ".dir-locals.el" "*-tests.el"))))
+
+(use-package eat
+  :ensure t
+  :config
+  ;; Add M-1 through M-6 to non-bound keys so winum bindings work in semi-char mode
+  (setq eat-semi-char-non-bound-key
+        (append eat-semi-char-non-bound-keys
+                '([M-1] [M-2] [M-3] [M-4] [M-5] [M-6])))
+  (eat-update-semi-char-mode-map))
 
 ;; ---------- EPUB ----------
 (use-package nov
