@@ -248,7 +248,7 @@
   (def-projectile-commander-method ?m
 				   "Run magit"
 				   (let ((default-directory (projectile-acquire-root)))
-				     (magit-status-setup-buffer)))g
+				     (magit-status-setup-buffer)))
   )
 
 (use-package projectile-ripgrep
@@ -536,6 +536,14 @@ debugger
   (setq c-basic-offset 3)
   (setq indent-tabs-mode nil)
   (setq tab-width 3)
+  (setq-local lsp-clients-clangd-executable "clangd-20")
+  (require 'bazel)
+  (when-let ((result (locate-dominating-file buffer-file-name
+                                             #'bazel--workspace-root-p)))
+    ;; Configure LSP to use bazel-clangd-wrapper for this bazel workspace
+    (setq-local lsp-clients-clangd-executable "bazel-clangd-wrapper")
+    (setq-local lsp-clients-clangd-args '("--clangd-path=clangd-20"))
+    )
   ;; Format buffer with clang-format before saving
   ;; (add-hook 'before-save-hook 'clang-format-buffer nil t)
   )
@@ -544,17 +552,6 @@ debugger
 (add-hook 'c++-mode-hook 'my/c-mode-common-hook)
 
 (setq lsp-cmake-server-command (expand-file-name "~/.local/bin/cmake-language-server"))
-;; python
-;; (use-package lsp-pyright
-;;   :ensure t
-;;   :hook (python-mode
-;; 	 .(lambda ()
-;; 	    (activate-uv-venv)
-;;             (setq lsp-pyright-langserver-command "basedpyright"
-;; 		  lsp-pyright-use-library-code-for-types t
-;; 		  lsp-pyright-disable-language-service nil
-;; 		  lsp-pyright-disable-organize-imports t)  ;; let ruff handle imports
-;;             (lsp))))
 
 ;; ---------- RUST ----------
 (use-package rustic
@@ -709,6 +706,13 @@ debugger
  '(hurl-mode :type git :host github :repo "jaszhe/hurl-mode"))
 (use-package hurl-mode
   :mode "\\.hurl\\'")
+
+;; ---------- BAZEL ----------
+(straight-use-package
+ '(bazel :type git :host github :repo "zacharyasmith/emacs-bazel-mode"))
+(use-package bazel
+  :ensure t)
+
 
 ;; ---------- TRAMP ----------
 (use-package counsel-tramp
@@ -929,6 +933,7 @@ highlighting and displayed in a read-only buffer (special-mode)."
 (put 'projectile-project-run-cmd 'safe-local-variable #'stringp)
 (put 'projectile-project-configure-cmd 'safe-local-variable #'stringp)
 (put 'dockerfile-image-name 'safe-local-variable #'stringp)
+(put 'projectile-root-local 'safe-local-variable #'stringp)
 
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
@@ -936,9 +941,7 @@ highlighting and displayed in a read-only buffer (special-mode)."
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  '(package-vc-selected-packages
-   '((difftastic :url "https://github.com/pkryger/difftastic.el.git")))
- '(safe-local-variable-directories
-   '("/opt/trueanomaly/flight_software/FSW_Tools/Functional_Tests/")))
+   '((difftastic :url "https://github.com/pkryger/difftastic.el.git"))))
 
 (provide '.emacs)
 ;;; .emacs ends here
