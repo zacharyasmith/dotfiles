@@ -297,7 +297,8 @@
   :ensure t
   :config
   (global-set-key (kbd "M-h") 'iflipb-next-buffer)
-  (global-set-key (kbd "M-H") 'iflipb-previous-buffer))
+  (global-set-key (kbd "M-H") 'iflipb-previous-buffer)
+  (global-set-key (kbd "C-M-h") 'ff-find-other-file))
 
 ;; --------- TREEMACS ---------
 (use-package treemacs
@@ -419,6 +420,18 @@
   :bind (:map markdown-mode-map
          ("C-c C-e" . markdown-do)))
 
+;; ---------- ELIXIR ----------
+(use-package elixir-mode
+  :ensure t)
+(use-package mix
+  :config
+  (add-hook 'elixir-mode-hook 'mix-minor-mode))
+(straight-use-package
+ '(exunit :type git :host github :repo "ananthakumaran/exunit.el"))
+(use-package exunit
+  :ensure t
+  (add-hook 'elixir-mode-hook 'exunit-mode))
+
 ;; ----------- COMPANY / LSP MODE / FLYCHECK ---------------
 (use-package flycheck
   :ensure t
@@ -482,9 +495,11 @@
 	 (json-mode . lsp)
 	 (rust-mode . lsp)
 	 (c++-mode . lsp)
+	 (elixir-mode . lsp)
 	 (lsp-mode . lsp-enable-which-key-integration))
   :config
   (define-key lsp-mode-map (kbd "C-c l") lsp-command-map)
+  (define-key lsp-mode-map (kbd ))
   (require 'lsp-clients)
   (setq 
    lsp-log-io nil
@@ -537,6 +552,7 @@ debugger
   (setq indent-tabs-mode nil)
   (setq tab-width 3)
   (setq-local lsp-clients-clangd-executable "clangd-20")
+  (local-set-key (kbd "C-M-h") 'ff-find-other-file)
   (require 'bazel)
   (when-let ((result (locate-dominating-file buffer-file-name
                                              #'bazel--workspace-root-p)))
@@ -835,6 +851,25 @@ debugger
   :ensure t
   :mode ("\\.csv\\'"))
 
+;; ---------- MULTI-CURSORS ----------
+(use-package iy-go-to-char
+  :ensure t
+  :bind (("C-c f" . 'iy-go-to-char)
+	 ("C-c F" . 'iy-go-to-char-backward)
+	 ("C-c ;" . 'iy-go-to-or-up-to-continue)
+	 ("C-c ," . 'iy-go-to-or-up-to-continue-backward)))
+(use-package multiple-cursors
+  :ensure t
+  :bind (("C-c m" . 'mc/edit-lines)
+	 ("C-." . 'mc/mark-next-like-this)
+	 ("C-," . 'mc/mark-previous-like-this)
+	 ("C-M-." . 'mc/mark-next-like-this-word)
+	 ("C-M-," . 'mc/mark-previous-like-this-word)
+	 ("C-c C-," . 'mc/mark-all-like-this))
+  :config
+  (add-to-list 'mc/cursor-specific-vars 'iy-go-to-char-start-pos))
+
+
 ;; ---------- UUID ----------
 (straight-use-package
  '(insert-uuid :type git :host github :repo "theesfeld/insert-uuid"))
@@ -932,8 +967,9 @@ highlighting and displayed in a read-only buffer (special-mode)."
 (put 'projectile-project-compilation-cmd 'safe-local-variable #'stringp)
 (put 'projectile-project-run-cmd 'safe-local-variable #'stringp)
 (put 'projectile-project-configure-cmd 'safe-local-variable #'stringp)
+(put 'projectile-project-test-cmd 'safe-local-variable #'stringp)
 (put 'dockerfile-image-name 'safe-local-variable #'stringp)
-(put 'projectile-root-local 'safe-local-variable #'stringp)
+(put 'projectile-project-root 'safe-local-variable #'stringp)
 
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
