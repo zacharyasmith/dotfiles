@@ -24,6 +24,18 @@
 (set-default-coding-systems 'utf-8)
 ;; no bell
 (setq ring-bell-function 'ignore)
+;; no-littering: organize auto-generated files
+(use-package no-littering
+  :ensure t
+  :config
+  ;; Store backup files in var/backup/
+  (setq backup-by-copying t
+        delete-old-versions t
+        kept-new-versions 6
+        kept-old-versions 2
+        version-control t)
+  ;; Configure auto-save and backup with no-littering paths
+  (no-littering-theme-backups))
 ;; C-x U / L
 (put 'upcase-region 'disabled nil)
 (put 'downcase-region 'disabled nil)
@@ -33,6 +45,7 @@
 (column-number-mode)
 ;; Disable line numbers in terminal modes
 (add-hook 'eat-mode-hook (lambda () (display-line-numbers-mode -1)))
+(add-hook 'treemacs-mode (lambda () (display-line-numbers-mode -1)))
 (add-hook 'vterm-mode-hook (lambda () (display-line-numbers-mode -1)))
 (add-hook 'term-mode-hook (lambda () (display-line-numbers-mode -1)))
 ;; delete selection with paste
@@ -181,7 +194,53 @@
     :config
     (counsel-projectile-mode))
   (setq ivy-use-virtual-buffers t)
+  (setq ivy-use-selectable-prompt t)
   (setq ivy-count-format "(%d/%d) "))
+
+;; ---------- SHELL COMPLETION ----------
+;; Bash completion support
+(use-package bash-completion
+  :ensure t
+  :config
+  (setq bash-completion-prog (executable-find "bash"))
+  (bash-completion-setup))
+
+;; Use bash-completion for all shells (works with bash, zsh via bash compatibility)
+(defun my/shell-complete-command ()
+  "Complete shell command at point using bash completion.
+Returns completion data in the format expected by completion-at-point-functions."
+  (when (and (boundp 'bash-completion-prog) bash-completion-prog)
+    (let* ((start (save-excursion (beginning-of-line) (point)))
+           (end (point))
+           (completion-data (bash-completion-dynamic-complete-nocomint start end t)))
+      ;; bash-completion-dynamic-complete-nocomint returns (start end collection)
+      ;; completion-at-point-functions expects the same format
+      completion-data)))
+
+;; Setup completion-at-point in minibuffer for shell commands
+(defun my/setup-shell-completion-minibuffer ()
+  "Setup shell completion in minibuffer."
+  (setq-local completion-at-point-functions
+              (list #'my/shell-complete-command))
+  ;; Bind TAB to trigger completion
+  (local-set-key (kbd "TAB") #'completion-at-point))
+
+;; Advice to add shell completion to commands
+(defun my/shell-command-with-completion (orig-fun &rest args)
+  "Advice to add shell completion to shell command prompts."
+  (minibuffer-with-setup-hook
+      #'my/setup-shell-completion-minibuffer
+    (apply orig-fun args)))
+
+;; Apply to standard shell commands
+(advice-add 'shell-command :around #'my/shell-command-with-completion)
+(advice-add 'async-shell-command :around #'my/shell-command-with-completion)
+
+;; Apply to projectile shell commands
+(with-eval-after-load 'projectile
+  (advice-add 'projectile-run-command-in-root :around #'my/shell-command-with-completion)
+  (advice-add 'projectile-run-shell-command-in-root :around #'my/shell-command-with-completion)
+  (advice-add 'projectile-run-async-shell-command-in-root :around #'my/shell-command-with-completion))
 
 ;; ---------- GIT ----------
 (use-package magit
@@ -311,7 +370,14 @@
   (treemacs-resize-icons 18)
   (treemacs-follow-mode t)
   (treemacs-filewatch-mode t)
+  (treemacs-git-commit-diff-mode t)
   (treemacs-fringe-indicator-mode 'always)
+  (require 'treemacs-project-follow-mode)
+  (treemacs-project-follow-mode t)
+  (setq treemacs-file-event-delay 1000
+	treemacs-is-never-other-window t
+	treemacs-silent-refresh t)
+  (treemacs-icon)
   (when treemacs-python-executable
     (treemacs-git-commit-diff-mode t))
   (pcase (cons (not (null (executable-find "git")))
@@ -331,7 +397,9 @@
         ("C-x t C-t" . treemacs-find-file)
         ("C-x t M-t" . treemacs-find-tag))
   )
-
+(use-package treemacs-nerd-icons
+  :config
+  (treemacs-nerd-icons-config))
 (use-package treemacs-projectile
   :after (treemacs projectile)
   :ensure t
@@ -350,6 +418,24 @@
   :after (treemacs magit)
   :ensure t)
 
+;; ---------- DIRED ----------
+(use-package dired-ranger
+  :ensure t
+  :straight (dired-hacks :type git :host github :repo "Fuco1/dired-hacks"))
+(use-package dired-subtree
+  :ensure t
+  :straight (dired-hacks :type git :host github :repo "Fuco1/dired-hacks")
+  :bind (:map dired-mode-map
+	 ("C-S i" . dired-subtree-insert)
+	 ("C-S r" . dired-subtree-remove)
+	 ("C-S t" . dired-subtree-toggle))
+  )
+(use-package dired-rainbow
+  :ensure t
+  :straight (dired-hacks :type git :host github :repo "Fuco1/dired-hacks")
+  :config
+  (progn
+    (dired-rainbow-define directory "#6cb2eb" "d.*")))
 
 ;; ---------- XTERM ------------------
 (use-package eterm-256color
@@ -552,6 +638,8 @@ debugger
   (setq indent-tabs-mode nil)
   (setq tab-width 3)
   (setq-local lsp-clients-clangd-executable "clangd-20")
+  (setq-local clang-format-executable "/usr/bin/clang-format-20")
+  (clang-format-on-save-mode)
   (local-set-key (kbd "C-M-h") 'ff-find-other-file)
   (require 'bazel)
   (when-let ((result (locate-dominating-file buffer-file-name
@@ -843,13 +931,28 @@ debugger
 
 ;; ---------- RAINBOW ----------
 (use-package csv-mode
-  :ensure t
-  :mode ("\\.csv\\'"))
+  :defer t)
 (straight-use-package
  '(rainbow-csv-mode :type git :host github :repo "emacs-vs/rainbow-csv"))
 (use-package rainbow-csv-mode
-  :ensure t
-  :mode ("\\.csv\\'"))
+  :defer t
+  :mode ("\\.csv\\'" . rainbow-csv-mode))
+
+;; ---------- HEXL ----------
+(use-package nhexl-mode
+  :ensure t)
+
+;; Rainbow colorization for hexl-mode
+(use-package rainbow-hexl-mode
+  :straight nil  ; Local package, not from a repository
+  :load-path "~/dotfiles"
+  :commands (rainbow-hexl-mode rainbow-hexl-refontify)
+  :after hexl
+  :hook (hexl-mode . rainbow-hexl-mode)
+  :custom
+  (rainbow-hexl-saturation 0.8)
+  (rainbow-hexl-min-lightness 0.5)
+  (rainbow-hexl-max-lightness 1.0))
 
 ;; ---------- MULTI-CURSORS ----------
 (use-package iy-go-to-char
@@ -881,9 +984,23 @@ debugger
   (insert-uuid-default-version 4)
   (insert-uuid-uppercase nil))
 
-;; ---------- CLAUDE ----------
+;; ---------- VTERM ----------
 (use-package vterm
     :ensure t)
+
+(defun my/vterm-with-completion (command)
+  "Run COMMAND with rlwrap in a new vterm buffer.
+Uses bash completion for command input."
+  (interactive
+   (list
+    (minibuffer-with-setup-hook
+        #'my/setup-shell-completion-minibuffer
+      (read-string "Command: "))))
+  (let ((vterm-shell (format "%s" command))
+        (buffer-name (format "*vterm-%s*" command)))
+    (vterm buffer-name)))
+
+;; ---------- CLAUDE ----------
 (use-package claude-code-ide
   :straight (:type git :host github :repo "manzaltu/claude-code-ide.el")
   :bind ("C-c '" . claude-code-ide-menu) ; Set your favorite keybinding
@@ -955,6 +1072,16 @@ highlighting and displayed in a read-only buffer (special-mode)."
     (pop-to-buffer buf-name)))
 (global-set-key (kbd "C-h c") #'help-page)
 (global-set-key (kbd "C-h M") #'man)
+
+
+;; STARTUP!
+(add-hook 'after-init-hook (lambda ()
+  (org-agenda-list)
+  (delete-other-windows)))
+
+(use-package breadcrumb
+  :ensure t
+  :config (breadcrumb-mode t))
 
 ;; ---------- MACHINE-LOCAL CONFIG ----------
 ;; Load ~/.emacs.d/custom/init.el if present (work-specific packages/settings)

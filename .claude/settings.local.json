@@ -3,7 +3,12 @@
     "allow": [
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(bash --version)",
+      "Bash(emacs --batch --eval \"\\(progn \\(load-file \\\\\".emacs\\\\\"\\) \\(message \\\\\"Config loaded successfully\\\\\"\\)\\)\")",
+      "Bash(curl -s \"https://melpa.org/archive.json\")",
+      "Bash(emacs --batch --eval \"\\(progn \\(add-to-list 'load-path \\\\\"~/.emacs.d/straight/build/bash-completion/\\\\\"\\) \\(require 'bash-completion\\) \\(prin1 \\(apropos-internal \\\\\"^bash-completion-\\\\\" 'fboundp\\)\\)\\)\")",
+      "Bash(emacs:*)"
     ],
     "deny": []
   }
