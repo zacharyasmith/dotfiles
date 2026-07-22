@@ -26,6 +26,8 @@
 (setq ring-bell-function 'ignore)
 ;; no-littering: organize auto-generated files
 (use-package no-littering
+    :vc (:url "https://github.com/emacscollective/no-littering"
+	    :rev :newest)
   :ensure t
   :config
   ;; Store backup files in var/backup/
@@ -155,47 +157,140 @@
   (mood-line-mode)
   (setq mood-line-show-encoding-information t))
 
-;; ----------  IVY/COUNSEL ----------
-(use-package counsel
-  :ensure t
-  :bind (("C-s" . swiper-isearch)
-	 ("C-r" . swiper-isearch-backward)
-	 ("M-x" . counsel-M-x)
-	 ("C-x C-f" . counsel-find-file)
-	 ("M-y" . counsel-yank-pop)
-	 ("C-h f" . counsel-describe-function)
-	 ("C-h v" . counsel-describe-variable)
-	 ("<f1> l" . counsel-find-library)
-	 ("<f2> i" . counsel-info-lookup-symbol)
-	 ("<f2> u" . counsel-unicode-char)
-	 ("<f2> j" . counsel-set-variable)
-	 ("C-x b" . ivy-switch-buffer)
-	 ("C-c v" . ivy-push-view)
-	 ("C-c V" . ivy-pop-view)
-	 ("C-c C-r" . ivy-resume)
-	 ("C-x 4 b" . ivy-switch-buffer-other-window))
-  :config
-  (ivy-mode 1)
-  (use-package ivy-prescient
-    :ensure t
-    :after (counsel)
-    :config
-    (ivy-prescient-mode t)
-    (prescient-persist-mode t)
-    )
-  (use-package counsel-projectile
-    :ensure t
-    :after (:all counsel projectile)
-    :bind (("C-x M-f" . counsel-projectile-find-file-dwim))
-    :init
-    (eval-when-compile
-      ;; Silence missing function warnings
-      (declare-function counsel-projectile-mode "counsel-projectile.el"))
-    :config
-    (counsel-projectile-mode))
-  (setq ivy-use-virtual-buffers t)
-  (setq ivy-use-selectable-prompt t)
-  (setq ivy-count-format "(%d/%d) "))
+;; ---------- TTY CHILD FRAMES ----------
+;; https://lists.gnu.org/r/emacs-devel/2024-10/msg00491.html
+;; Gerd Möllmann's tty-child-frames support lets posframe-based
+;; popups (corfu, vertico-posframe, transient-posframe,
+;; which-key-posframe) work on ttys, not just GUI frames.
+;; Only relevant if/when this Emacs is built from the
+;; scratch/tty-child-frames branch (or once merged upstream).
+;; Placed before the vertico/corfu/posframe use-package blocks below
+;; so the overrides are in place before any of those modes are enabled.
+(when (>= emacs-major-version 31)
+  (with-eval-after-load 'posframe
+    (defun posframe-workable-p ()
+      "Test posframe workable status."
+      (and (>= emacs-major-version 26)
+           (not (or noninteractive
+                     emacs-basic-display
+                     (not (or (display-graphic-p)
+                              (featurep 'tty-child-frames)))
+                     (eq (frame-parameter (selected-frame) 'minibuffer) 'only))))))
+
+  (with-eval-after-load 'corfu
+    (cl-defgeneric corfu--popup-support-p ()
+      "Return non-nil if child frames are supported."
+      (or (display-graphic-p)
+          (featurep 'tty-child-frames))))
+
+  (with-eval-after-load 'vertico-posframe
+    (push '(tty-non-selected-cursor . t) vertico-posframe-parameters)
+    (push '(undecorated . nil) vertico-posframe-parameters))
+
+  (with-eval-after-load 'transient-posframe
+    (push '(undecorated . nil) transient-posframe-parameters)))
+
+;; ----------  MINIBUFFER COMPLETION (VERTICO/CONSULT vs IVY/COUNSEL) ----------
+;; Emacs 31+ can render posframe child-frames on ttys (Gerd Möllmann's
+;; tty-child-frames work, see the TTY CHILD FRAMES section above), so on
+;; 31+ we switch to vertico/consult with vertico-posframe. Older Emacs
+;; keeps the previous ivy/counsel/swiper setup.
+(if (>= emacs-major-version 31)
+    (progn
+      (use-package posframe
+	:ensure t)
+
+      (when (posframe-workable-p)
+	(posframe-show " *my-posframe-buffer*"
+                       :string "This is a test"
+                       :position (point)))
+      
+      (use-package vertico
+        :ensure t
+        :init
+        (vertico-mode)
+        :config
+        (setq vertico-count 14))
+
+      (use-package vertico-posframe
+        :ensure t
+        :after vertico
+        :config
+        (vertico-posframe-mode 1))
+
+      (use-package vertico-prescient
+        :ensure t
+        :after vertico
+        :config
+        (vertico-prescient-mode t)
+        (prescient-persist-mode t))
+
+      (use-package orderless
+        :ensure t
+        :custom
+        (completion-styles '(orderless basic))
+        (completion-category-overrides '((file (styles basic partial-completion)))))
+
+      (use-package marginalia
+        :ensure t
+        :init
+        (marginalia-mode))
+
+      (use-package consult
+        :ensure t
+        :bind (("C-s" . consult-line)
+               ("C-r" . consult-line)
+               ("M-y" . consult-yank-pop)
+               ("C-x b" . consult-buffer)
+               ("C-x 4 b" . consult-buffer-other-window)
+               ("C-c C-r" . consult-history)))
+
+      (use-package consult-projectile
+        :ensure t
+        :after (consult projectile)
+        :bind (("C-x M-f" . consult-projectile-find-file))))
+
+  (progn
+    (use-package counsel
+      :ensure t
+      :bind (("C-s" . swiper-isearch)
+	     ("C-r" . swiper-isearch-backward)
+	     ("M-x" . counsel-M-x)
+	     ("C-x C-f" . counsel-find-file)
+	     ("M-y" . counsel-yank-pop)
+	     ("C-h f" . counsel-describe-function)
+	     ("C-h v" . counsel-describe-variable)
+	     ("<f1> l" . counsel-find-library)
+	     ("<f2> i" . counsel-info-lookup-symbol)
+	     ("<f2> u" . counsel-unicode-char)
+	     ("<f2> j" . counsel-set-variable)
+	     ("C-x b" . ivy-switch-buffer)
+	     ("C-c v" . ivy-push-view)
+	     ("C-c V" . ivy-pop-view)
+	     ("C-c C-r" . ivy-resume)
+	     ("C-x 4 b" . ivy-switch-buffer-other-window))
+      :config
+      (ivy-mode 1)
+      (use-package ivy-prescient
+        :ensure t
+        :after (counsel)
+        :config
+        (ivy-prescient-mode t)
+        (prescient-persist-mode t)
+        )
+      (use-package counsel-projectile
+        :ensure t
+        :after (:all counsel projectile)
+        :bind (("C-x M-f" . counsel-projectile-find-file-dwim))
+        :init
+        (eval-when-compile
+          ;; Silence missing function warnings
+          (declare-function counsel-projectile-mode "counsel-projectile.el"))
+        :config
+        (counsel-projectile-mode))
+      (setq ivy-use-virtual-buffers t)
+      (setq ivy-use-selectable-prompt t)
+      (setq ivy-count-format "(%d/%d) "))))
 
 ;; ---------- SHELL COMPLETION ----------
 ;; Bash completion support
@@ -257,16 +352,13 @@ Returns completion data in the format expected by completion-at-point-functions.
   (define-key magit-mode-map (kbd "M-4") nil)
   (define-key magit-mode-map (kbd "M-5") nil)
   (define-key magit-mode-map (kbd "M-6") nil))
-
+(use-package el-mock
+  :ensure t)
 (use-package difftastic
   :ensure t
   :vc (:url "https://github.com/pkryger/difftastic.el.git"
 	    :rev :newest)
   :config (difftastic-bindings-mode))
-
-;; ---------- RIPGREP ----------
-(use-package ripgrep
-  :ensure t)
 
 ;; ---------- PROJECTILE ----------
 (use-package projectile
@@ -274,44 +366,51 @@ Returns completion data in the format expected by completion-at-point-functions.
   :init
   (projectile-mode +1)
   :bind (:map projectile-mode-map
-	      ("C-c p" . projectile-command-map))
+	      ("C-c p" . projectile-dispatch))
   :config
-  (setq projectile-completion-system 'ivy
+  (setq projectile-completion-system (if (>= emacs-major-version 31) 'default 'ivy)
 	projectile-enable-cmake-presets t
 	projectile-per-project-compilation-buffer t
-	projectile-switch-project-action #'projectile-commander
+	projectile-switch-project-action #'projectile-dispatch
 	)
-  (def-projectile-commander-method ?s
-				   "Open a *shell* buffer for the project."
-				   ;; This requires a snapshot version of Projectile.
-				   (projectile-run-vterm))
 
-  (def-projectile-commander-method ?c
-				   "Run `compile' in the project."
-				   (claude-code-ide))
+  (defun projectile-dispatch-find-file-fd ()
+    "Find file in project using fd, ignoring .gitignore."
+    (interactive)
+    (let ((default-directory (projectile-acquire-root)))
+      (find-file
+       (completing-read
+	"Find file (fd): "
+	(split-string
+	 (shell-command-to-string
+	  (concat "fd --type f --no-require-git --no-ignore-vcs --hidden "
+		  "-E '.git' -E '.venv' -E '.env'"))
+	 "\n" t)))))
 
-  (def-projectile-commander-method ?C
-				   "Run `compile' in the project."
-				   (claude-code-ide-menu))
-  
-  (def-projectile-commander-method ?F
-				   "Find file in project using fd (ignoring .gitignore)."
-				   (let ((default-directory (projectile-acquire-root)))
-				     (find-file
-				      (completing-read
-				       "Find file (fd): "
-				       (split-string
-					(shell-command-to-string (concat "fd --type f --no-require-git --no-ignore-vcs --hidden "
-									 "-E '.git' -E '.venv' -E '.env'"))
-					"\n" t)))))
-  (def-projectile-commander-method ?m
-				   "Run magit"
-				   (let ((default-directory (projectile-acquire-root)))
-				     (magit-status-setup-buffer)))
+  (defun projectile-dispatch-magit ()
+    "Run magit-status in the project root."
+    (interactive)
+    (let ((default-directory (projectile-acquire-root)))
+      (magit-status)))
+
+  (projectile--dispatch-define)
+  (transient-replace-suffix 'projectile-dispatch "F"
+    '("F" "file (fd, no ignore)" projectile-dispatch-find-file-fd))
+  (transient-append-suffix 'projectile-dispatch "v"
+    '("m" "magit" projectile-dispatch-magit))
+  (transient-append-suffix 'projectile-dispatch "m"
+    '("M" "magit dispatch" magit-dispatch))
+
+  (defun projectile-dispatch-claude-code-ide ()
+    "Run `claude-code-ide' in the project root."
+    (interactive)
+    (let ((default-directory (projectile-acquire-root)))
+      (claude-code-ide)))
+
+  (transient-append-suffix 'projectile-dispatch "cX"
+    '("C" "claude-code-ide" projectile-dispatch-claude-code-ide))
   )
 
-(use-package projectile-ripgrep
-  :ensure t)
 
 ;; ---------- CMAKE/CONAN ----------
 (straight-use-package
@@ -528,42 +627,64 @@ Returns completion data in the format expected by completion-at-point-functions.
             (lambda ()
               (setq-local flycheck-disabled-checkers '(python-ruff)))))
 
-;; company mode
-(use-package company
-  :ensure t
-  :config
-  (global-company-mode 1)
-  (setq company-idle-delay 0)
-  :init
-  (setq
-   company-minimum-prefix-length 2
-   company-tooltip-limit 14
-   company-tooltip-align-annotations t
-   company-require-match 'never
+;; in-buffer completion: corfu (Emacs 31+, posframe/tty-child-frames capable)
+;; vs. company (older Emacs)
+(if (>= emacs-major-version 31)
+    (progn
+      (use-package corfu
+        :ensure t
+        :init
+        (global-corfu-mode)
+        :custom
+        (corfu-cycle t)
+        (corfu-auto t)
+        (corfu-auto-delay 0)
+        (corfu-auto-prefix 2)
+        (corfu-quit-no-match 'separator))
 
-   ;; These auto-complete the current selection when
-   ;; `company-auto-complete-chars' is typed. This is too magical. We
-   ;; already have the much more explicit RET and TAB.
-   company-auto-complete nil
-   company-auto-complete-chars nil
+      (use-package corfu-prescient
+        :ensure t
+        :after corfu
+        :config
+        (corfu-prescient-mode t)
+        (prescient-persist-mode t)))
 
-   ;; Only search the current buffer for `company-dabbrev' (a backend that
-   ;; suggests text your open buffers). This prevents Company from causing
-   ;; lag once you have a lot of buffers open.
-   company-dabbrev-other-buffers nil
+  (progn
+    (use-package company
+      :ensure t
+      :config
+      (global-company-mode 1)
+      (setq company-idle-delay 0)
+      :init
+      (setq
+       company-minimum-prefix-length 2
+       company-tooltip-limit 14
+       company-tooltip-align-annotations t
+       company-require-match 'never
 
-   ;; Make `company-dabbrev' fully case-sensitive, to improve UX with
-   ;; domain-specific words with particular casing.
-   company-dabbrev-ignore-case nil
-   company-dabbrev-downcase nil
-   ))
+       ;; These auto-complete the current selection when
+       ;; `company-auto-complete-chars' is typed. This is too magical. We
+       ;; already have the much more explicit RET and TAB.
+       company-auto-complete nil
+       company-auto-complete-chars nil
 
-(use-package company-prescient
-  :ensure t
-  :after company
-  :config
-  (company-prescient-mode t)
-  (prescient-persist-mode t))
+       ;; Only search the current buffer for `company-dabbrev' (a backend that
+       ;; suggests text your open buffers). This prevents Company from causing
+       ;; lag once you have a lot of buffers open.
+       company-dabbrev-other-buffers nil
+
+       ;; Make `company-dabbrev' fully case-sensitive, to improve UX with
+       ;; domain-specific words with particular casing.
+       company-dabbrev-ignore-case nil
+       company-dabbrev-downcase nil
+       ))
+
+    (use-package company-prescient
+      :ensure t
+      :after company
+      :config
+      (company-prescient-mode t)
+      (prescient-persist-mode t))))
 
 ;; language server protocol
 ;; (use-package lsp-bridge
@@ -608,9 +729,18 @@ Returns completion data in the format expected by completion-at-point-functions.
                 lsp-ui-doc-include-signature t
                 lsp-ui-doc-use-childframe t)
   :commands lsp-ui-mode)
-(use-package lsp-ivy
-  :commands lsp-ivy-workspace-symbol)
-debugger
+(if (>= emacs-major-version 31)
+    (use-package consult-lsp
+      :ensure t
+      :after (consult lsp-mode)
+      :bind (:map lsp-mode-map
+                  ("C-c l g s" . consult-lsp-file-symbols)
+                  ("C-c l g S" . consult-lsp-symbols)
+                  ("C-c l g d" . consult-lsp-diagnostics)))
+  (use-package lsp-ivy
+    :commands lsp-ivy-workspace-symbol))
+
+;; ---------- DEBUGGER ----------
 (use-package dap-mode
   :after lsp-mode
   :commands dap-debug
@@ -665,50 +795,26 @@ debugger
 (use-package dockerfile-mode
   :ensure t)
 
-;; ---------- COMPANY ----------
-;; company mode
-(use-package company
-  :ensure t
-  :config
-  (global-company-mode 1)
-  (setq company-idle-delay 0)
-  :init
-  (setq
-   company-minimum-prefix-length 2
-   company-tooltip-limit 14
-   company-tooltip-align-annotations t
-   company-require-match 'never
-
-   ;; These auto-complete the current selection when
-   ;; `company-auto-complete-chars' is typed. This is too magical. We
-   ;; already have the much more explicit RET and TAB.
-   company-auto-complete nil
-   company-auto-complete-chars nil
-
-   ;; Only search the current buffer for `company-dabbrev' (a backend that
-   ;; suggests text your open buffers). This prevents Company from causing
-   ;; lag once you have a lot of buffers open.
-   company-dabbrev-other-buffers nil
-
-   ;; Make `company-dabbrev' fully case-sensitive, to improve UX with
-   ;; domain-specific words with particular casing.
-   company-dabbrev-ignore-case nil
-   company-dabbrev-downcase nil
-   ))
-(use-package company-prescient
-  :ensure t
-  :after company
-  :config
-  (company-prescient-mode t)
-  (prescient-persist-mode t)
-  )
-
-
 ;; -------- WHICH KEY MODE ---------
 (use-package which-key
     :config
     (which-key-mode)
     (setq which-key-idle-delay 0.25))
+
+(when (>= emacs-major-version 31)
+  (use-package which-key-posframe
+    :ensure t
+    :after which-key
+    :config
+    (which-key-posframe-mode 1)))
+
+;; -------- TRANSIENT POSFRAME ---------
+(when (>= emacs-major-version 31)
+  (use-package transient-posframe
+    :ensure t
+    :after transient
+    :config
+    (transient-posframe-mode 1)))
 
 ;; -------- ORG MODE ----------------
 ;; org mode
@@ -856,7 +962,25 @@ debugger
 		  :type string
 		  :description "Pattern to search for")))
   
-  (claude-code-ide-emacs-tools-setup) )
+  (claude-code-ide-emacs-tools-setup)
+
+  (defconst claude-code-ide--small-frame-width-threshold 170
+    "Full-screen terminal width, in columns, on the 13\" laptop.
+Frames no wider than this are treated as a single small screen,
+where a side window would crowd out the rest of the editor.")
+
+  (define-advice claude-code-ide--display-buffer-in-side-window
+      (:around (orig-fn buffer) no-side-window-on-small-frame)
+    "Open in a full-frame buffer instead of a side window on small frames."
+    (if (or (not claude-code-ide-use-side-window)
+            (> (frame-width) claude-code-ide--small-frame-width-threshold))
+        (funcall orig-fn buffer)
+      (let* ((claude-code-ide-use-side-window nil)
+             (display-buffer-alist
+              (cons `(,(regexp-quote (buffer-name buffer))
+                       (display-buffer-full-frame))
+                    display-buffer-alist)))
+        (funcall orig-fn buffer)))) )
 
 ;; ---------- EAT ----------
 (straight-use-package
