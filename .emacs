@@ -199,11 +199,6 @@
     (progn
       (use-package posframe
 	:ensure t)
-
-      (when (posframe-workable-p)
-	(posframe-show " *my-posframe-buffer*"
-                       :string "This is a test"
-                       :position (point)))
       
       (use-package vertico
         :ensure t
