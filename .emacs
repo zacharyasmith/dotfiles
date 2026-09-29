@@ -42,7 +42,7 @@
 (put 'upcase-region 'disabled nil)
 (put 'downcase-region 'disabled nil)
 ;; line/col numbers
-(setq display-line-numbers-type 'relative)
+(setq display-line-numbers-type t)
 (global-display-line-numbers-mode)
 (column-number-mode)
 ;; Disable line numbers in terminal modes
@@ -50,6 +50,8 @@
 (add-hook 'treemacs-mode (lambda () (display-line-numbers-mode -1)))
 (add-hook 'vterm-mode-hook (lambda () (display-line-numbers-mode -1)))
 (add-hook 'term-mode-hook (lambda () (display-line-numbers-mode -1)))
+(add-hook 'ghostel-mode-hook (lambda () (display-line-numbers-mode -1)))
+
 ;; delete selection with paste
 (delete-selection-mode 1)
 ;; (when (daemonp)
@@ -93,8 +95,11 @@
 (setq warning-minimum-level :emergency)
 (defvar bootstrap-version)
 (let ((bootstrap-file
-       (expand-file-name "straight/repos/straight.el/bootstrap.el" user-emacs-directory))
-      (bootstrap-version 6))
+       (expand-file-name
+        "straight/repos/straight.el/bootstrap.el"
+        (or (bound-and-true-p straight-base-dir)
+            user-emacs-directory)))
+      (bootstrap-version 7))
   (unless (file-exists-p bootstrap-file)
     (with-current-buffer
         (url-retrieve-synchronously
@@ -242,8 +247,8 @@
 
       (use-package consult-projectile
         :ensure t
-        :after (consult projectile)
-        :bind (("C-x M-f" . consult-projectile-find-file))))
+	:bind (("C-x B" . consult-projectile))
+        :after (consult projectile)))
 
   (progn
     (use-package counsel
@@ -363,11 +368,8 @@ Returns completion data in the format expected by completion-at-point-functions.
   :bind (:map projectile-mode-map
 	      ("C-c p" . projectile-dispatch))
   :config
-  (setq projectile-completion-system (if (>= emacs-major-version 31) 'default 'ivy)
-	projectile-enable-cmake-presets t
-	projectile-per-project-compilation-buffer t
-	projectile-switch-project-action #'projectile-dispatch
-	)
+  (setq  projectile-enable-cmake-presets t
+	 projectile-per-project-compilation-buffer t)
 
   (defun projectile-dispatch-find-file-fd ()
     "Find file in project using fd, ignoring .gitignore."
@@ -404,6 +406,15 @@ Returns completion data in the format expected by completion-at-point-functions.
 
   (transient-append-suffix 'projectile-dispatch "cX"
     '("C" "claude-code-ide" projectile-dispatch-claude-code-ide))
+
+  (defun projectile-dispatch-consult-ripgrep ()
+    "Run `consult-ripgrep' in the project root."
+    (interactive)
+    (let ((default-directory (projectile-acquire-root)))
+      (consult-ripgrep)))
+
+  (transient-replace-suffix 'projectile-dispatch "s r"
+    '("s r" "ripgrep" projectile-dispatch-consult-ripgrep))
   )
 
 
@@ -471,7 +482,6 @@ Returns completion data in the format expected by completion-at-point-functions.
   (setq treemacs-file-event-delay 1000
 	treemacs-is-never-other-window t
 	treemacs-silent-refresh t)
-  (treemacs-icon)
   (when treemacs-python-executable
     (treemacs-git-commit-diff-mode t))
   (pcase (cons (not (null (executable-find "git")))
@@ -610,7 +620,13 @@ Returns completion data in the format expected by completion-at-point-functions.
  '(exunit :type git :host github :repo "ananthakumaran/exunit.el"))
 (use-package exunit
   :ensure t
+  :config
   (add-hook 'elixir-mode-hook 'exunit-mode))
+
+;; ---------- TREESITTER ----------
+(use-package treesit-auto
+  :config
+  (global-treesit-auto-mode))
 
 ;; ----------- COMPANY / LSP MODE / FLYCHECK ---------------
 (use-package flycheck
@@ -697,11 +713,14 @@ Returns completion data in the format expected by completion-at-point-functions.
 	 (json-mode . lsp)
 	 (rust-mode . lsp)
 	 (c++-mode . lsp)
+	 (c++-ts-mode . lsp)
+	 (c-mode . lsp)
+	 (c-ts-mode . lsp)
 	 (elixir-mode . lsp)
 	 (lsp-mode . lsp-enable-which-key-integration))
   :config
   (define-key lsp-mode-map (kbd "C-c l") lsp-command-map)
-  (define-key lsp-mode-map (kbd ))
+
   (require 'lsp-clients)
   (setq 
    lsp-log-io nil
@@ -779,6 +798,8 @@ Returns completion data in the format expected by completion-at-point-functions.
 
 (add-hook 'c-mode-hook 'my/c-mode-common-hook)
 (add-hook 'c++-mode-hook 'my/c-mode-common-hook)
+(add-hook 'c-ts-mode-hook 'my/c-mode-common-hook)
+(add-hook 'c++-ts-mode-hook 'my/c-mode-common-hook)
 
 (setq lsp-cmake-server-command (expand-file-name "~/.local/bin/cmake-language-server"))
 
@@ -802,6 +823,11 @@ Returns completion data in the format expected by completion-at-point-functions.
     :after which-key
     :config
     (which-key-posframe-mode 1)))
+
+(use-package transient
+  :ensure t
+  :config
+  (setq transient-show-menu 0.01))
 
 ;; -------- TRANSIENT POSFRAME ---------
 (when (>= emacs-major-version 31)
@@ -904,7 +930,7 @@ Returns completion data in the format expected by completion-at-point-functions.
 (use-package tree-sitter-langs
   :ensure t
   :config
-  (global-tree-sitter-mode))
+  (global-tree-sitter-mode -1))
 
 ;; ---------- HURL ------------
 (straight-use-package
@@ -927,17 +953,47 @@ Returns completion data in the format expected by completion-at-point-functions.
   (define-key global-map (kbd "C-c C-s") 'counsel-tramp))
 
 ;; --------- CLAUDE ----------
+(use-package ghostel
+  :ensure t
+  :bind (("C-x m" . ghostel)
+         :map ghostel-semi-char-mode-map
+         ("C-s"  . consult-line)
+         ("C-k"  . my/ghostel-send-C-k-and-kill)
+         ;; I'm used to go up/down the shell history with M-n/p from eshell
+         ;; Simulate this behavior in ghostel by sending C-p and C-n
+         ("M-p" . (lambda () (interactive) (ghostel-send-key "p" "ctrl")))
+         ("M-n" . (lambda () (interactive) (ghostel-send-key "n" "ctrl")))
+         :map project-prefix-map
+         ("m" . ghostel-project)
+         ("M" . ghostel-project-list-buffers))
+  :config
+  (setq
+   ghostel-term "xterm-256color")
+  (defun my/ghostel-send-C-k-and-kill ()
+    "Send `C-k' to ghostel.
+Like normal Emacs `C-k'.  Kill to end of line and put content in kill-ring."
+    (interactive)
+    (kill-ring-save (point) (line-end-position))
+    (ghostel-send-key "k" "ctrl"))
+
+  (add-to-list 'project-switch-commands '(ghostel-project "Ghostel") t)
+  (add-to-list 'project-switch-commands '(ghostel-project-list-buffers "Ghostel buffers") t)
+  (add-to-list 'ghostel-eval-cmds '("magit-status-setup-buffer" magit-status-setup-buffer))
+  (ghostel-compile-global-mode)
+  (ghostel-eshell-visual-command-mode)
+  (ghostel-comint-global-mode))
 (use-package claude-code-ide
   :straight (:type git :host github :repo "manzaltu/claude-code-ide.el")
-  :bind ("C-c '" . claude-code-ide-menu) ; Set your favorite keybinding
+  :bind (("C-c '" . claude-code-ide-menu)
+         ("C-c C-i" . claude-code-ide-implement-todo))
   :config
-  (setq claude-code-ide-terminal-backend 'eat
+  (setq claude-code-ide-terminal-backend 'ghostel
 	claude-code-ide-enable-mcp-server t
 	claude-code-ide-use-side-window t
 	claude-code-ide-focus-on-open t
 	claude-code-ide-show-claude-window-in-ediff nil
 	claude-code-ide-window-width 100
-	claude-code-ide-prevent-reflow-glitch t )
+	claude-code-ide-prevent-reflow-glitch t)
 
   (defun my-project-grep (pattern)
     "Search for PATTERN in the current session's project."
@@ -956,8 +1012,31 @@ Returns completion data in the format expected by completion-at-point-functions.
    :args '((:name "pattern"
 		  :type string
 		  :description "Pattern to search for")))
-  
+
   (claude-code-ide-emacs-tools-setup)
+
+  (defun claude-code-ide-implement-todo ()
+    "Send the current TODO line to Claude with context about the current buffer.
+This function:
+1. Captures the current line (assumed to contain a TODO)
+2. Switches to the claude-code-ide buffer
+3. Sends a prompt asking Claude to check the Emacs MCP for the current buffer
+4. Asks Claude to implement the TODO
+5. Automatically submits the prompt"
+    (interactive)
+    (save-buffer)
+    (let* ((current-buffer-name (buffer-name))
+           (current-file-name (buffer-file-name))
+           (current-line (string-trim (thing-at-point 'line t)))
+           (line-number (line-number-at-pos)))
+      (let* ((prompt (format "Look at the Emacs MCP to see which file is currently open. Then implement this TODO:\n\n%s\n\n(from %s:%d)"
+			     current-line
+			     (or current-file-name current-buffer-name)
+			     line-number)))
+        ;; Switch to the Claude buffer first
+        (claude-code-ide-switch-to-buffer)
+        ;; Send the prompt (this will automatically submit it)
+        (claude-code-ide-send-prompt prompt)))))
 
   (defconst claude-code-ide--small-frame-width-threshold 170
     "Full-screen terminal width, in columns, on the 13\" laptop.
@@ -975,7 +1054,7 @@ where a side window would crowd out the rest of the editor.")
               (cons `(,(regexp-quote (buffer-name buffer))
                        (display-buffer-full-frame))
                     display-buffer-alist)))
-        (funcall orig-fn buffer)))) )
+        (funcall orig-fn buffer))))
 
 ;; ---------- EAT ----------
 (straight-use-package
@@ -1119,14 +1198,8 @@ Uses bash completion for command input."
         (buffer-name (format "*vterm-%s*" command)))
     (vterm buffer-name)))
 
-;; ---------- CLAUDE ----------
-(use-package claude-code-ide
-  :straight (:type git :host github :repo "manzaltu/claude-code-ide.el")
-  :bind ("C-c '" . claude-code-ide-menu) ; Set your favorite keybinding
-  :config
-  (claude-code-ide-emacs-tools-setup)) ; Optionally enable Emacs MCP tools
-
-(use-package edit-indirect.el
+;; ---------- EDIT-INDIRECT ----------
+(use-package edit-indirect
   :straight (:type git :host github :repo "Fanael/edit-indirect"))
 
 

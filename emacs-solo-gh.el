@@ -110,7 +110,7 @@ which should be set to the repository root."
                     (t nil))))
     (if (file-exists-p full-path)
         (progn
-          (find-file full-path)
+          (find-file-other-window full-path)
           (when (and line-num (> line-num 0))
             (goto-char (point-min))
             (forward-line (1- line-num))))
@@ -128,28 +128,184 @@ which should be set to the repository root."
 
 (defun gh--format-review-comments (repo number)
     "Fetch inline review comments for PR NUMBER in REPO.
-Returns an alist of (review-id . list-of-formatted-strings)."
+Returns an alist of (review-id . list-of-formatted-strings).
+Now includes threaded replies in flat format."
     (let* ((repo-slug (or repo (gh--repo)))
            (raw (gh--run-string
                  (format "api /repos/%s/pulls/%s/comments --paginate" repo-slug number)))
            (data (condition-case nil
                      (json-parse-string raw :object-type 'alist :array-type 'list)
                    (error nil)))
-           (by-review (make-hash-table :test 'equal)))
-      (dolist (c (or data '()))
-        (let* ((review-id (alist-get 'pull_request_review_id c))
-               (author (or (alist-get 'login (alist-get 'user c)) ""))
-               (path (or (alist-get 'path c) ""))
-               (line (or (alist-get 'line c) (alist-get 'original_line c) ""))
-               (body (gh--json-get 'body c ""))
-               (file-link (gh--markdown-link (format "%s:%s" path line) path line))
-               (indented-body (replace-regexp-in-string "\n" "\n  " body))
-               (formatted (format "  - %s — **@%s**\n\n    %s"
-                                  file-link author indented-body)))
-          (push formatted (gethash review-id by-review nil))))
-      ;; Reverse each list so they're in order
-      (maphash (lambda (k v) (puthash k (nreverse v) by-review)) by-review)
+           ;; Fetch review threads via GraphQL to get resolved status
+           ;; REST API doesn't have threads endpoint, must use GraphQL
+           (repo-parts (split-string repo-slug "/"))
+           (owner (car repo-parts))
+           (name (cadr repo-parts))
+           (threads-raw (shell-command-to-string
+                         (format "gh api graphql -f query='{ repository(owner: \"%s\", name: \"%s\") { pullRequest(number: %s) { reviewThreads(first: 100) { nodes { isResolved comments(first: 100) { nodes { databaseId } } } pageInfo { hasNextPage endCursor } } } } }' 2>/dev/null"
+                                 owner name number)))
+           (threads-data (condition-case nil
+                            (let* ((json-obj (json-parse-string threads-raw :object-type 'alist :array-type 'list))
+                                   (repo-data (alist-get 'repository (alist-get 'data json-obj)))
+                                   (pr-data (alist-get 'pullRequest repo-data))
+                                   (review-threads (alist-get 'reviewThreads pr-data))
+                                   (nodes (alist-get 'nodes review-threads)))
+                              nodes)
+                          (error nil)))
+           ;; Build map of comment-id -> resolved status
+           (resolved-map (make-hash-table :test 'equal))
+           (by-review (make-hash-table :test 'equal))
+           (pr-num (if (numberp number) (number-to-string number) number)))
+
+      ;; Populate resolved-map from GraphQL threads
+      (dolist (thread (or threads-data '()))
+        (let* ((comments-obj (alist-get 'comments thread))
+               (comment-nodes (alist-get 'nodes comments-obj))
+               (resolved (eq (alist-get 'isResolved thread) t)))
+          (dolist (comment (or comment-nodes '()))
+            (let ((comment-id (alist-get 'databaseId comment)))
+              (when comment-id
+                (puthash comment-id resolved resolved-map))))))
+
+      ;; Step 1: Classify comments and build reply map
+      (let ((top-level '())
+            (reply-map (make-hash-table :test 'equal)))
+
+        ;; Classify each comment
+        (dolist (c (or data '()))
+          (let ((in-reply-to (alist-get 'in_reply_to_id c)))
+            (if (or (null in-reply-to) (eq in-reply-to :null))
+                (push c top-level)
+              ;; This is a reply - add to reply map
+              (push c (gethash in-reply-to reply-map)))))
+
+        ;; Step 2: Process each top-level comment with its thread
+        (dolist (c top-level)
+          (let* ((review-id (alist-get 'pull_request_review_id c))
+                 (comment-id (alist-get 'id c))
+                 (author (or (alist-get 'login (alist-get 'user c)) ""))
+                 (path (or (alist-get 'path c) ""))
+                 (line (or (alist-get 'line c)
+                          (alist-get 'original_line c) ""))
+                 (body (gh--json-get 'body c ""))
+                 (created (gh--date-short (alist-get 'created_at c)))
+                 (resolved (gethash comment-id resolved-map))
+                 (resolved-indicator (if resolved " ✓ RESOLVED" ""))
+                 (file-link (gh--markdown-link
+                            (format "%s:%s" path line) path line))
+                 (indented-body (replace-regexp-in-string
+                                "\n" "\n    " body))
+
+                 ;; Format top-level with properties
+                 (top-formatted
+                  (gh--propertize-comment
+                   (format "  - %s — **@%s** · %s%s\n\n    %s"
+                          file-link author created resolved-indicator indented-body)
+                   comment-id repo-slug pr-num nil))
+
+                 ;; Collect and sort descendant replies
+                 (descendants (gh--collect-all-descendants
+                              comment-id reply-map))
+                 (sorted-descendants
+                  (sort descendants
+                        (lambda (a b)
+                          (string< (or (alist-get 'created_at a) "")
+                                  (or (alist-get 'created_at b) "")))))
+
+                 ;; Format replies
+                 (reply-strings
+                  (mapcar
+                   (lambda (reply)
+                     (let* ((r-id (alist-get 'id reply))
+                            (r-author (or (alist-get 'login
+                                                     (alist-get 'user reply))
+                                         ""))
+                            (r-body (gh--json-get 'body reply ""))
+                            (r-created (gh--date-short
+                                       (alist-get 'created_at reply)))
+                            (r-resolved (gethash r-id resolved-map))
+                            (r-resolved-indicator (if r-resolved " ✓ RESOLVED" ""))
+                            (r-indented-body (replace-regexp-in-string
+                                             "\n" "\n      " r-body)))
+                       (gh--propertize-comment
+                        (format "    ↳ **@%s** · %s%s\n\n      %s"
+                               r-author r-created r-resolved-indicator r-indented-body)
+                        r-id repo-slug pr-num t)))
+                   sorted-descendants)))
+
+            ;; Combine top-level with replies
+            (let ((full-thread
+                   (if reply-strings
+                       (concat top-formatted "\n\n"
+                              (string-join reply-strings "\n\n"))
+                     top-formatted)))
+              (push full-thread (gethash review-id by-review nil))))))
+
+      ;; Reverse lists for correct order
+      (maphash (lambda (k v) (puthash k (nreverse v) by-review))
+               by-review)
       by-review))
+
+(defun gh--collect-all-descendants (comment-id reply-map)
+  "Recursively collect all descendant comments of COMMENT-ID from REPLY-MAP.
+Returns a flat list of all descendants (children, grandchildren, etc.)."
+  (let ((direct-children (gethash comment-id reply-map))
+        (all-descendants '()))
+    (dolist (child direct-children)
+      (push child all-descendants)
+      ;; Recursively collect grandchildren
+      (setq all-descendants
+            (append all-descendants
+                    (gh--collect-all-descendants
+                     (alist-get 'id child)
+                     reply-map))))
+    all-descendants))
+
+(defun gh--propertize-comment (text comment-id repo pr-number is-reply)
+  "Add text properties to formatted comment TEXT for reply functionality.
+COMMENT-ID: unique comment identifier for API calls.
+REPO: repository slug (owner/name).
+PR-NUMBER: pull request number.
+IS-REPLY: t if this is a reply, nil if top-level."
+  (propertize text
+              'gh-comment-id comment-id
+              'gh-repo repo
+              'gh-pr-number pr-number
+              'gh-is-reply is-reply))
+
+(defun gh-comment-reply (&optional refresh)
+  "Reply to the inline review comment at point.
+With prefix argument (C-u), refresh the detail buffer after posting."
+  (interactive "P")
+  (let* ((comment-id (get-text-property (point) 'gh-comment-id))
+         (repo (get-text-property (point) 'gh-repo))
+         (pr-number (get-text-property (point) 'gh-pr-number)))
+    (unless comment-id
+      (user-error "Not on a comment. Navigate with 'n' and try again"))
+    (let ((body (read-string (format "Reply to comment %s: " comment-id))))
+      (when (and body (not (string-empty-p body)))
+        (gh--post-comment-reply repo pr-number comment-id body refresh)))))
+
+(defun gh--post-comment-reply (repo pr-number comment-id body &optional refresh)
+  "Post a reply to COMMENT-ID in PR PR-NUMBER in REPO.
+Uses the GitHub API to create a threaded reply.
+If REFRESH is non-nil, refresh the detail buffer after posting."
+  (let* ((endpoint (format "/repos/%s/pulls/%s/comments" repo pr-number))
+         (json-obj `((body . ,body) (in_reply_to . ,comment-id)))
+         (json-string (json-encode json-obj))
+         (cmd (format "printf '%%s' %s | gh api -X POST %s --input -"
+                     (shell-quote-argument json-string)
+                     endpoint)))
+    (message "Posting reply...")
+    (let ((result (shell-command-to-string cmd)))
+      (if (string-match-p "\"id\":" result)
+          (progn
+            (message "Reply posted successfully!")
+            (when refresh
+              (sit-for 0.5)
+              (gh-detail-refresh)))
+        (message "Error posting reply: %s"
+                 (truncate-string-to-width result 100))))))
 
 (defun gh--format-timeline (repo number)
     "Fetch and format timeline events for issue/PR NUMBER in REPO.
@@ -477,10 +633,16 @@ Returns a formatted string with PR metadata and body in markdown."
     (interactive)
     (let* ((from (current-buffer))
            (num (gh--pr-number))
+           ;; Get the PR's base repository (the repo the PR is in)
+           (pr-repo (string-trim
+                     (or (ignore-errors
+                           (shell-command-to-string
+                            (format "gh pr view %s --json headRepository -q .headRepository.nameWithOwner" num)))
+                         (gh--repo))))
            (buf (get-buffer-create (format "*github-pr-%s*" num)))
            (diff-buf (get-buffer-create (format "*github-pr-%s-diff*" num)))
-           (body (gh--pr-view-markdown nil num))
-           (timeline (gh--format-timeline nil num))
+           (body (gh--pr-view-markdown pr-repo num))
+           (timeline (gh--format-timeline pr-repo num))
            (diff (gh--run-string (format "pr diff %s" num))))
       ;; diff buffer (right side)
       (with-current-buffer diff-buf
@@ -518,7 +680,7 @@ Returns a formatted string with PR metadata and body in markdown."
       (message "Opened PR #%s in browser" num)))
 
 (defun gh-pr-diff ()
-    "View PR diff in a buffer."
+  "View PR diff in a buffer."
     (interactive)
     (let* ((num (gh--pr-number))
            (buf (get-buffer-create (format "*github-pr-%s-diff*" num))))
@@ -996,11 +1158,13 @@ g refresh | l PRs | i issues
     :doc "Keymap for GitHub detail view."
     "q"   #'gh-detail-quit
     "o"   #'gh-detail-browse
-    "g"   #'gh-detail-refresh)
+    "g"   #'gh-detail-refresh
+    "n"   #'gh--next-markdown-link
+    "r"   #'gh-comment-reply)
 
 (define-minor-mode gh-detail-minor-mode
     "Minor mode for GitHub detail view keybindings.
-q quit (back to list + menu) | o open in browser | g refresh"
+q quit | o browser | g refresh | n next link | r reply to comment"
     :lighter " GH"
     :keymap gh-detail-minor-mode-map)
 
@@ -1092,6 +1256,32 @@ q quit (back to list + menu) | o open in browser | g refresh"
            (markdown-follow-thing-at-point)))
      (t (message "No link at point")))))
 
+(defun gh--next-markdown-link ()
+  "Move to the next markdown browsable link."
+  (interactive)
+  (let ((start-pos (point))
+        (found-pos nil))
+
+    ;; Search for next link with gh-file-path property
+    (save-excursion
+      (let ((pos (point)))
+        (while (and (not found-pos)
+                    (setq pos (next-single-property-change pos 'gh-file-path)))
+          (when (> pos start-pos)
+            (setq found-pos pos)))))
+
+    ;; Search for next markdown link pattern
+    (save-excursion
+      (goto-char (1+ start-pos))  ; Move past current position
+      (when (re-search-forward "\\[\\([^]]+\\)\\](\\([^)]+\\))" nil t)
+        (let ((pattern-pos (match-beginning 0)))
+          (when (or (not found-pos) (< pattern-pos found-pos))
+            (setq found-pos pattern-pos)))))
+
+    (if found-pos
+        (goto-char found-pos)
+      (message "No more links"))))
+
 (defun gh--apply-markdown-fontification ()
   "Apply markdown fontification to the current buffer.
 Preserves existing text properties like links and faces."
@@ -1105,8 +1295,9 @@ Preserves existing text properties like links and faces."
     ;; Fallback to regular markdown-mode fontification
     (font-lock-ensure)))
 
-(defun gh--setup-detail-buffer ()
-    "Set up the current buffer as a GitHub detail view."
+(defun gh--setup-detail-buffer (&optional saved-line)
+    "Set up the current buffer as a GitHub detail view.
+If SAVED-LINE is provided, move to that line number after setup."
     (let ((ret gh--return-buffer)
           (repo-root (string-trim
                       (shell-command-to-string
@@ -1118,6 +1309,8 @@ Preserves existing text properties like links and faces."
       (setq-local fill-column 80)
       (gh--fill-prose)
       (goto-char (point-min))
+      (when saved-line
+        (forward-line (1- saved-line)))
       (if (and (fboundp 'markdown-ts-mode)
                (treesit-language-available-p 'markdown))
           (progn
@@ -1158,7 +1351,8 @@ Preserves existing text properties like links and faces."
     "Refresh the current detail view."
     (interactive)
     (let ((name (buffer-name))
-          (ret gh--return-buffer))
+          (ret gh--return-buffer)
+          (saved-line (line-number-at-pos)))
       (cond
        ((string-match "\\*github-pr-\\(?:\\([^-]+/[^-]+\\)-\\)?\\([0-9]+\\)\\*" name)
         (let* ((repo (match-string 1 name))
@@ -1184,9 +1378,8 @@ Preserves existing text properties like links and faces."
           (when (and timeline (not (string-empty-p timeline)))
             (insert "\n\n---\n\n## Timeline\n\n")
             (insert timeline))
-          (goto-char (point-min))
           (setq gh--return-buffer ret)
-          (gh--setup-detail-buffer)
+          (gh--setup-detail-buffer saved-line)
           (setq gh--paired-buffer diff-buf)))
        ((string-match "\\*github-issue-\\(?:\\([^-]+/[^-]+\\)-\\)?\\([0-9]+\\)\\*" name)
         (let* ((repo (match-string 1 name))
@@ -1200,9 +1393,8 @@ Preserves existing text properties like links and faces."
           (when (and timeline (not (string-empty-p timeline)))
             (insert "\n\n---\n\n## Timeline\n\n")
             (insert timeline))
-          (goto-char (point-min))
           (setq gh--return-buffer ret)
-          (gh--setup-detail-buffer))))))
+          (gh--setup-detail-buffer saved-line))))))
 
 (defun gh-run-list ()
     "Show recent workflow runs in a buffer."

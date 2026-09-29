@@ -87,6 +87,17 @@ if [ -x /usr/bin/dircolors ]; then
     alias egrep='egrep --color=auto'
 fi
 
+if [[ "$INSIDE_EMACS" = 'ghostel' ]]; then
+    # Open a file in Emacs from the terminal
+    e()   { ghostel_cmd find-file-other-window "$@"; }
+
+    # Open dired in another window
+    dow() { ghostel_cmd dired-other-window "$@"; }
+
+    # Open magit for the current directory
+    gst() { ghostel_cmd magit-status-setup-buffer "$(pwd)"; }
+fi
+
 # colored GCC warnings and errors
 #export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 
@@ -185,3 +196,4 @@ fi
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+eval "$(~/.local/bin/mise activate bash)"
