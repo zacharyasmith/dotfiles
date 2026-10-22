@@ -1,0 +1,81 @@
+# Builds a terminal-only Emacs from source into ~/.local/opt/emacs.
+# Imported by bootstrap.yml. Bump emacs_version to upgrade.
+#
+# A stamp file in the install prefix records the version and configure
+# flags of the last successful install. When it matches, the clone and
+# build are skipped entirely.
+---
+- name: Install Emacs build dependencies
+  become: true
+  ansible.builtin.apt:
+    name:
+      - build-essential
+      - autoconf
+      - texinfo
+      - libgccjit-15-dev   # must match the system gcc major version
+      - libncurses-dev
+      - libgnutls28-dev
+      - libtree-sitter-dev
+      - libsqlite3-dev
+      - libxml2-dev
+      - zlib1g-dev
+      - libgpm-dev
+      - libsystemd-dev
+      - libdbus-1-dev
+      - libgmp-dev
+      - libacl1-dev
+      - liblcms2-dev
+      - mailutils
+      # vterm compiles vterm-module on first use
+      - cmake
+      - libtool-bin
+      - libvterm-dev
+    state: present
+
+- name: Read Emacs build stamp
+  ansible.builtin.slurp:
+    src: "{{ emacs_prefix }}/.build-stamp"
+  register: emacs_stamp
+  failed_when: false
+
+- name: Decide whether Emacs needs building
+  ansible.builtin.set_fact:
+    emacs_wanted_stamp: "{{ ([emacs_version] + emacs_configure_flags) | join('\n') }}"
+    emacs_installed_stamp: "{{ emacs_stamp.content | default('') | b64decode | trim }}"
+
+- name: Build and install Emacs {{ emacs_version }}
+  when: emacs_installed_stamp != emacs_wanted_stamp
+  block:
+    # Savannah's HTTPS endpoint fails shallow clones; the GitHub mirror has the same tags.
+    - name: Clone Emacs source
+      ansible.builtin.git:
+        repo: https://github.com/emacs-mirror/emacs.git
+        dest: "{{ emacs_src }}"
+        version: "emacs-{{ emacs_version }}"
+        depth: 1
+
+    - name: Run autogen.sh
+      ansible.builtin.command: ./autogen.sh
+      args:
+        chdir: "{{ emacs_src }}"
+
+    - name: Run configure
+      ansible.builtin.command:
+        argv: "{{ ['./configure', '--prefix=' ~ emacs_prefix] + emacs_configure_flags }}"
+        chdir: "{{ emacs_src }}"
+
+    - name: Build Emacs
+      ansible.builtin.command: "make -j{{ ansible_facts.processor_nproc }}"
+      args:
+        chdir: "{{ emacs_src }}"
+
+    - name: Install Emacs
+      ansible.builtin.command: make install
+      args:
+        chdir: "{{ emacs_src }}"
+
+    - name: Write Emacs build stamp
+      ansible.builtin.copy:
+        content: "{{ emacs_wanted_stamp }}"
+        dest: "{{ emacs_prefix }}/.build-stamp"
+        mode: "0644"

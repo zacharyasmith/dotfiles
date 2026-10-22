@@ -1,0 +1,165 @@
+# Installs the tools ~/.bashrc expects on a fresh Ubuntu (26.04) machine.
+#
+# Usage (from the repo root):
+#   sudo apt install ansible
+#   ansible-playbook ansible/bootstrap.yml -K
+---
+- name: Bootstrap shell dependencies
+  hosts: localhost
+  connection: local
+  gather_facts: true
+
+  vars:
+    # Ubuntu 26.04's default sudo is sudo-rs, which rewrites the password
+    # prompt so Ansible never recognizes it. Classic sudo ships as sudo.ws.
+    ansible_become_exe: /usr/bin/sudo.ws
+    home: "{{ ansible_facts.user_dir }}"
+    user: "{{ ansible_facts.user_id }}"
+    dotfiles: "{{ playbook_dir | dirname }}"
+    apt_packages:
+      - build-essential
+      - curl
+      - git
+      - bat
+      - eza
+      - fzf
+      - starship
+      - tree
+      - btop
+      - fastfetch
+      - xclip
+      - wl-clipboard
+      - libnotify-bin   # notify-send, used by the `alert` alias
+      - rustup
+      - docker.io         # dockerd + docker CLI (not Docker Desktop)
+      - docker-buildx
+      - docker-compose-v2
+    emacs_version: "31.1"
+    emacs_src: "{{ home }}/src/emacs"
+    emacs_prefix: "{{ home }}/.local/opt/emacs"
+    emacs_configure_flags:
+      - --without-x
+      - --without-sound
+      - --with-native-compilation=yes
+      - --with-tree-sitter
+      - --with-gnutls
+      - --with-sqlite3
+      - --with-xml2
+      - --with-modules
+      - --with-threads
+      - --with-zlib
+      - --with-gpm
+      - --with-libsystemd
+      - --with-dbus
+      - --with-file-notification=inotify
+      - --with-mailutils
+      - CFLAGS=-O2
+
+  tasks:
+    - name: Install apt packages
+      become: true
+      ansible.builtin.apt:
+        name: "{{ apt_packages }}"
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Add mise apt repository
+      become: true
+      ansible.builtin.deb822_repository:
+        name: mise
+        types: deb
+        uris: https://mise.jdx.dev/deb
+        suites: stable
+        components: main
+        signed_by: https://mise.jdx.dev/gpg-key.pub
+
+    - name: Install mise
+      become: true
+      ansible.builtin.apt:
+        name: mise
+        state: present
+        update_cache: true
+
+    - name: Add user to docker group
+      become: true
+      ansible.builtin.user:
+        name: "{{ user }}"
+        groups: docker
+        append: true
+
+    - name: Create ~/.local/bin
+      ansible.builtin.file:
+        path: "{{ home }}/.local/bin"
+        state: directory
+        mode: "0755"
+
+    # Ubuntu ships bat as `batcat`; the fzf preview in .bashrc calls `bat`.
+    - name: Link bat to batcat
+      ansible.builtin.file:
+        src: /usr/bin/batcat
+        dest: "{{ home }}/.local/bin/bat"
+        state: link
+
+    - name: Install stable Rust toolchain
+      ansible.builtin.command: rustup default stable
+      args:
+        creates: "{{ home }}/.rustup/toolchains"
+
+    - name: Create ~/.cargo/bin
+      ansible.builtin.file:
+        path: "{{ home }}/.cargo/bin"
+        state: directory
+        mode: "0755"
+
+    - name: Install cargo-binstall
+      ansible.builtin.unarchive:
+        src: "https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-{{ ansible_facts.architecture }}-unknown-linux-musl.tgz"
+        dest: "{{ home }}/.cargo/bin"
+        remote_src: true
+        creates: "{{ home }}/.cargo/bin/cargo-binstall"
+
+    - name: Install uv
+      ansible.builtin.command: cargo install --locked uv
+      args:
+        creates: "{{ home }}/.cargo/bin/uv"
+
+    - name: Build and install Emacs
+      ansible.builtin.import_tasks: emacs.yml
+
+    - name: Link .bashrc into home
+      ansible.builtin.file:
+        src: "{{ dotfiles }}/.bashrc"
+        dest: "{{ home }}/.bashrc"
+        state: link
+        force: true
+
+    - name: Link .emacs into home
+      ansible.builtin.file:
+        src: "{{ dotfiles }}/.emacs"
+        dest: "{{ home }}/.emacs"
+        state: link
+        force: true
+
+    - name: Create ~/.emacs.d/custom
+      ansible.builtin.file:
+        path: "{{ home }}/.emacs.d/custom"
+        state: directory
+        mode: "0755"
+
+    # Machine-specific settings loaded by .emacs; never overwrite once it exists.
+    - name: Create stub ~/.emacs.d/custom/init.el
+      ansible.builtin.copy:
+        dest: "{{ home }}/.emacs.d/custom/init.el"
+        force: false
+        mode: "0644"
+        content: |
+          ;;; init.el --- Machine-specific Emacs settings  -*- lexical-binding: t; -*-
+
+          ;;; Commentary:
+          ;; Loaded by ~/.emacs when present.  Not tracked in dotfiles.
+
+          ;;; Code:
+
+          (provide 'init)
+          ;;; init.el ends here
