@@ -37,10 +37,26 @@ if [ -z "${debian_chroot:-}" ] && [ -r /etc/debian_chroot ]; then
     debian_chroot=$(cat /etc/debian_chroot)
 fi
 
+# Keep TERM as forwarded by ssh (e.g. xterm-ghostty) when this host has
+# its terminfo; otherwise fall back to xterm-256color.  For Ghostty,
+# record what the real terminal is so Emacs (tty-image.el) still knows
+# it can use the kitty graphics protocol.
+if ! infocmp "$TERM" >/dev/null 2>&1; then
+    if [ "$TERM" = xterm-ghostty ]; then
+        export TERM_PROGRAM="${TERM_PROGRAM:-ghostty}"
+        export COLORTERM="${COLORTERM:-truecolor}"
+    fi
+    export TERM=xterm-256color
+fi
+
+# Route ssh through Ghostty's wrapper (remote terminfo install + env forwarding).
+if [ "$TERM" = xterm-ghostty ] && [ -x "$GHOSTTY_BIN_DIR/ghostty" ]; then
+    ssh() { "$GHOSTTY_BIN_DIR/ghostty" +ssh -- "$@"; }
+fi
+
 # set a fancy prompt (non-color, unless we know we "want" color)
-export TERM=xterm-256color
 case "$TERM" in
-    xterm-color|*-256color) color_prompt=yes;;
+    xterm-color|*-256color|xterm-ghostty) color_prompt=yes;;
 esac
 
 # uncomment for a colored prompt, if the terminal has the capability; turned
