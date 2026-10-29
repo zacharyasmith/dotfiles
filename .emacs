@@ -781,7 +781,7 @@ Returns completion data in the format expected by completion-at-point-functions.
   (setq c-basic-offset 3)
   (setq indent-tabs-mode nil)
   (setq tab-width 3)
-  (setq-local lsp-clients-clangd-executable "clangd-20")
+  (setq-local lsp-clients-clangd-executable "clangd")
   (setq-local clang-format-executable "/usr/bin/clang-format-20")
   (clang-format-on-save-mode)
   (local-set-key (kbd "C-M-h") 'ff-find-other-file)
@@ -986,6 +986,7 @@ Like normal Emacs `C-k'.  Kill to end of line and put content in kill-ring."
   :straight (:type git :host github :repo "manzaltu/claude-code-ide.el")
   :bind (("C-c '" . claude-code-ide-menu)
          ("C-c C-i" . claude-code-ide-implement-todo))
+  :ensure t
   :config
   (setq claude-code-ide-terminal-backend 'ghostel
 	claude-code-ide-enable-mcp-server t
@@ -1036,7 +1037,7 @@ This function:
         ;; Switch to the Claude buffer first
         (claude-code-ide-switch-to-buffer)
         ;; Send the prompt (this will automatically submit it)
-        (claude-code-ide-send-prompt prompt)))))
+        (claude-code-ide-send-prompt prompt))))
 
   (defconst claude-code-ide--small-frame-width-threshold 170
     "Full-screen terminal width, in columns, on the 13\" laptop.
@@ -1054,7 +1055,7 @@ where a side window would crowd out the rest of the editor.")
               (cons `(,(regexp-quote (buffer-name buffer))
                        (display-buffer-full-frame))
                     display-buffer-alist)))
-        (funcall orig-fn buffer))))
+        (funcall orig-fn buffer)))))
 
 ;; ---------- EAT ----------
 (straight-use-package
@@ -1097,6 +1098,8 @@ where a side window would crowd out the rest of the editor.")
          (cond
           ((eq system-type 'darwin)
            (shell-command-to-string "pbpaste"))
+          ((and (eq system-type 'gnu/linux) (not (display-graphic-p)))
+           (user-error "In a terminal, paste with Cmd+V (terminal paste)"))
           ((eq system-type 'gnu/linux)
            (shell-command-to-string "xclip -selection clipboard -o"))
           ((or (eq system-type 'windows-nt)
@@ -1104,6 +1107,14 @@ where a side window would crowd out the rest of the editor.")
            (shell-command-to-string "powershell.exe -command Get-Clipboard")))))
     (when text
       (insert (string-trim-right text)))))
+
+(defun osc52-copy (text)
+  "Copy TEXT to the outer terminal's clipboard via OSC 52.
+Works over ssh, mosh, and tmux (with `set-clipboard on') without X."
+  (send-string-to-terminal
+   (concat "\e]52;c;"
+           (base64-encode-string (encode-coding-string text 'utf-8) t)
+           "\a")))
 
 (defun copy-selected-text (start end)
   (interactive "r")
@@ -1114,6 +1125,8 @@ where a side window would crowd out the rest of the editor.")
         (with-temp-buffer
           (insert text)
           (call-process-region (point-min) (point-max) "pbcopy")))
+       ((and (eq system-type 'gnu/linux) (not (display-graphic-p)))
+        (osc52-copy text))
        ((eq system-type 'gnu/linux)
         (with-temp-buffer
           (insert text)
@@ -1151,6 +1164,18 @@ where a side window would crowd out the rest of the editor.")
   (rainbow-hexl-saturation 0.8)
   (rainbow-hexl-min-lightness 0.5)
   (rainbow-hexl-max-lightness 1.0))
+
+;; ---------- TTY IMAGES ----------
+;; Show images in terminal Emacs (locally or over ssh) on terminals
+;; with the kitty graphics protocol, e.g. Ghostty.  GUI frames still
+;; use the normal image-mode.
+(use-package tty-image
+  :straight nil  ; Local package, not from a repository
+  :load-path "~/dotfiles"
+  :demand t
+  :commands (tty-image-insert-file)
+  :config
+  (tty-image-mode 1))
 
 ;; ---------- MULTI-CURSORS ----------
 (use-package iy-go-to-char
