@@ -3,8 +3,15 @@
 ;;; Zach's Emacs configuration.
 ;;; Code:
 
-;; required for clipboard issues with Emacs >= 29 on macos
-(setq xterm-extra-capabilities nil)
+;; Required for clipboard issues with Emacs >= 29 on macOS.  Emacs' own
+;; clipboard integration is off; copy/paste go through `copy-selected-text' and
+;; `paste-from-system-clipboard' (OSC 52 / pbcopy / xclip) further down.
+;;
+;; NOTE: `xterm-extra-capabilities' used to be set to nil here and then
+;; overwritten unconditionally with a capability list in the XTERM-MOUSE
+;; section below, so the nil never took effect.  The list is the behaviour this
+;; config has actually been running with, so the dead nil is gone rather than
+;; the list; if macOS clipboard trouble comes back, that list is the suspect.
 (setq select-enable-clipboard nil)
 (setq xterm-set-window-title nil)
 (add-hook 'tty-setup-hook
@@ -37,7 +44,7 @@
 (column-number-mode)
 ;; Disable line numbers in terminal modes
 (add-hook 'eat-mode-hook (lambda () (display-line-numbers-mode -1)))
-(add-hook 'treemacs-mode (lambda () (display-line-numbers-mode -1)))
+(add-hook 'treemacs-mode-hook (lambda () (display-line-numbers-mode -1)))
 (add-hook 'vterm-mode-hook (lambda () (display-line-numbers-mode -1)))
 (add-hook 'term-mode-hook (lambda () (display-line-numbers-mode -1)))
 (add-hook 'ghostel-mode-hook (lambda () (display-line-numbers-mode -1)))
@@ -443,7 +450,9 @@ completion."
   :config
   ;; (cmake-integration-generator "Gnu")
   (setq cmake-integration-use-separated-compilation-buffer-for-each-target t)
-  (global-set-key (kbd "C-c c") 'cmake-integration-transient)
+  ;; Was "C-c c", which collided with `copy-selected-text' further down; which
+  ;; one won depended on whether cmake-integration had been loaded yet.
+  (global-set-key (kbd "C-c k") 'cmake-integration-transient)
   ;; :bind (:map c++-mode-map
   ;;             ([f5] . cmake-integration-transient) ;; Open main transient menu
   ;;             ([M-f9] . cmake-integration-select-current-target) ;; Ask for target
@@ -542,10 +551,14 @@ completion."
 (use-package dired-subtree
   :ensure t
   :straight (dired-hacks :type git :host github :repo "Fuco1/dired-hacks")
+  ;; These were "C-S i" / "C-S r" / "C-S t".  There is no "C-S" modifier
+  ;; prefix: (kbd "C-S i") evaluates to plain "i", so these bound i, r and t in
+  ;; dired-mode-map, shadowing dired-maybe-insert-subdir, dired-do-rename and
+  ;; dired-toggle-marks.
   :bind (:map dired-mode-map
-	 ("C-S i" . dired-subtree-insert)
-	 ("C-S r" . dired-subtree-remove)
-	 ("C-S t" . dired-subtree-toggle))
+	 ("C-c s i" . dired-subtree-insert)
+	 ("C-c s r" . dired-subtree-remove)
+	 ("C-c s t" . dired-subtree-toggle))
   )
 (use-package dired-rainbow
   :ensure t
@@ -578,7 +591,10 @@ completion."
 (defun json-save-buffer ()
     "Format before save."
     (interactive)
-    (json-mode-beautify 0 (buffer-end 1))
+    ;; `json-mode-beautify' takes (BEGIN END).  This used to pass 0 as BEGIN,
+    ;; which is not a valid buffer position -- points are 1-based -- so every
+    ;; C-x C-s in a JSON buffer signalled args-out-of-range.
+    (json-mode-beautify (point-min) (point-max))
     (save-buffer))
 (add-hook 'json-mode-hook
 	  (lambda ()
@@ -735,13 +751,16 @@ completion."
   (define-key lsp-mode-map (kbd "C-c l") lsp-command-map)
 
   (require 'lsp-clients)
-  (setq 
+  (setq
    lsp-log-io nil
    lsp-idle-delay 0.500
-   lsp-treemacs-sync-mode 1
    ;; performance stuff
    lsp-prefer-flymake nil
    lsp-enable-snippet t)
+  ;; `lsp-treemacs-sync-mode' is a minor mode, not a variable: setq'ing it to 1
+  ;; flipped the flag without ever running the body that installs the hooks.
+  (with-eval-after-load 'lsp-treemacs
+    (lsp-treemacs-sync-mode 1))
   :commands lsp
   )
 
@@ -756,14 +775,17 @@ completion."
                 lsp-ui-doc-include-signature t
                 lsp-ui-doc-use-childframe t)
   :commands lsp-ui-mode)
+;; Bind into `lsp-command-map', not `lsp-mode-map'.  "C-c l" is already bound
+;; to the whole lsp-command-map above, so defining "C-c l g s" in the same
+;; keymap tries to use a non-prefix key as a prefix.
 (if (>= emacs-major-version 31)
     (use-package consult-lsp
       :ensure t
       :after (consult lsp-mode)
-      :bind (:map lsp-mode-map
-                  ("C-c l g s" . consult-lsp-file-symbols)
-                  ("C-c l g S" . consult-lsp-symbols)
-                  ("C-c l g d" . consult-lsp-diagnostics)))
+      :bind (:map lsp-command-map
+                  ("g s" . consult-lsp-file-symbols)
+                  ("g S" . consult-lsp-symbols)
+                  ("g d" . consult-lsp-diagnostics)))
   (use-package lsp-ivy
     :commands lsp-ivy-workspace-symbol))
 
@@ -799,8 +821,8 @@ completion."
   (clang-format-on-save-mode)
   (local-set-key (kbd "C-M-h") 'ff-find-other-file)
   (require 'bazel)
-  (when-let ((result (locate-dominating-file buffer-file-name
-                                             #'bazel--workspace-root-p)))
+  (when-let* ((result (locate-dominating-file buffer-file-name
+                                              #'bazel--workspace-root-p)))
     ;; Configure LSP to use bazel-clangd-wrapper for this bazel workspace
     (setq-local lsp-clients-clangd-executable "bazel-clangd-wrapper")
     (setq-local lsp-clients-clangd-args '("--clangd-path=clangd-20"))
@@ -875,7 +897,12 @@ completion."
 	  (executable-find (getenv "BROWSER"))
 	  browse-url-browser-function 'browse-url-generic))
 
-(require 'f)
+;; `update-mobile-files' below uses both f- and s- functions; only f was
+;; required, which is where the "Required package 's-1.12.0' is unavailable"
+;; startup error came from.
+(use-package f :ensure t :demand t)
+(use-package s :ensure t :demand t)
+
 (defun update-mobile-files nil
   "Do the remote update"
   (interactive)
@@ -1115,8 +1142,10 @@ where a side window would crowd out the rest of the editor.")
 (use-package eat
   :ensure t
   :config
-  ;; Add M-1 through M-6 to non-bound keys so winum bindings work in semi-char mode
-  (setq eat-semi-char-non-bound-key
+  ;; Add M-1 through M-6 to non-bound keys so winum bindings work in semi-char
+  ;; mode.  The variable is `eat-semi-char-non-bound-keys' (plural); this used
+  ;; to assign to `...-non-bound-key', which nothing reads.
+  (setq eat-semi-char-non-bound-keys
         (append eat-semi-char-non-bound-keys
                 '([M-1] [M-2] [M-3] [M-4] [M-5] [M-6])))
   (eat-update-semi-char-mode-map))
