@@ -757,6 +757,58 @@ Returns a formatted string with PR metadata and body in markdown."
       (kill-new url)
       (message "Copied: %s" url)))
 
+(defun gh--repo-url ()
+    "Return the web URL of the current repo (works for GitHub Enterprise).
+Signals an error if gh cannot resolve the repo."
+    (let* ((repo-flag (if gh--repo (format "--repo %s" gh--repo) ""))
+           (url (gh--run-string
+                 (format "repo view %s --json url -q .url" repo-flag))))
+      (unless (string-prefix-p "http" url)
+        (user-error "Could not determine repo URL: %s" url))
+      url))
+
+(defun gh--context-pr-number ()
+    "Return the PR number for the current context.
+Tries the PR at point in a PR list, then the PR number in the buffer
+name of a PR detail buffer, then the PR for the current branch, and
+finally prompts."
+    (or (and (derived-mode-p 'gh-pr-mode)
+             (let ((entry (tabulated-list-get-entry)))
+               (and entry (string-trim (aref entry 0)))))
+        (and (string-match "\\*github-pr-\\(?:[^-]+/[^-]+-\\)?\\([0-9]+\\)"
+                           (buffer-name))
+             (match-string 1 (buffer-name)))
+        (let ((num (gh--run-string "pr view --json number -q .number")))
+          (and (string-match-p "\\`[0-9]+\\'" num) num))
+        (read-string "PR number: ")))
+
+(defun gh--git-string (args)
+    "Run git with ARGS and return trimmed output, or nil on failure."
+    (let ((out (string-trim
+                (shell-command-to-string (format "git %s 2>/dev/null" args)))))
+      (unless (string-empty-p out) out)))
+
+(defun gh-copy-commit-link (&optional revision)
+    "Copy a markdown link to REVISION on the PR for the current context.
+REVISION defaults to HEAD; with a prefix argument, prompt for it.  The
+commit does not need to be pushed yet.  Useful when replying to PR
+comments: \"addressed in [abc1234](...)\"."
+    (interactive
+     (list (when current-prefix-arg
+             (read-string "Revision: " nil nil "HEAD"))))
+    (let* ((rev (or revision "HEAD"))
+           (sha (gh--git-string (format "rev-parse --verify %s^{commit}"
+                                        (shell-quote-argument rev))))
+           (_ (unless (and sha (string-match-p "\\`[0-9a-f]\\{40,\\}\\'" sha))
+                (user-error "No such revision: %s" rev)))
+           (short (or (gh--git-string (format "rev-parse --short %s" sha))
+                      (substring sha 0 7)))
+           (num (gh--context-pr-number))
+           (url (format "%s/pull/%s/commits/%s" (gh--repo-url) num sha))
+           (link (format "[`%s`](%s)" short url)))
+      (kill-new link)
+      (message "Copied: %s" link)))
+
 (defun gh-pr-create ()
     "Create a new pull request interactively."
     (interactive)
@@ -1160,11 +1212,13 @@ g refresh | l PRs | i issues
     "o"   #'gh-detail-browse
     "g"   #'gh-detail-refresh
     "n"   #'gh--next-markdown-link
-    "r"   #'gh-comment-reply)
+    "r"   #'gh-comment-reply
+    "k"   #'gh-copy-commit-link)
 
 (define-minor-mode gh-detail-minor-mode
     "Minor mode for GitHub detail view keybindings.
-q quit | o browser | g refresh | n next link | r reply to comment"
+q quit | o browser | g refresh | n next link | r reply to comment
+k copy commit link"
     :lighter " GH"
     :keymap gh-detail-minor-mode-map)
 
@@ -1456,7 +1510,8 @@ If SAVED-LINE is provided, move to that line number after setup."
       ("p" "Prev" gh-nav-prev :transient t)
       ("m" "Mark" gh-mark :transient t)
       ("M" "Unmark all" gh-unmark-all :transient t)
-      ("w" "Copy URL" gh-pr-copy-url :transient t)]]
+      ("w" "Copy URL" gh-pr-copy-url :transient t)
+      ("k" "Copy commit link" gh-copy-commit-link :transient t)]]
     [["PR Actions"
       ("RET" "View" gh-pr-view
        :inapt-if-not gh--in-pr-list-p)

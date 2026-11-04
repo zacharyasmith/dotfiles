@@ -1036,16 +1036,15 @@ completion."
 ;; A plain "emacsclient -nw" makes a new tty frame on the terminal it was
 ;; invoked from -- which, inside ghostel, is the ghostel pty.  The result is an
 ;; Emacs painted inside an Emacs buffer, with the outer Emacs swallowing every
-;; keystroke.  `with-editor-export-editor' instead exports an $EDITOR that hands
-;; the file to this Emacs via the server and blocks the child until C-x #.
+;; keystroke.  `with-editor-mode' exports an $EDITOR that hands the file to this
+;; Emacs via the server and blocks the child until C-x #.
 ;; So e.g. claude-code's prompt editor opens a normal window here.
 (use-package with-editor
   :ensure t
-  :hook ((ghostel-mode . with-editor-export-editor)
-         (eat-mode . with-editor-export-editor)
-         (vterm-mode . with-editor-export-editor)
-         (term-exec . with-editor-export-editor)
-         (eshell-mode . with-editor-export-editor)))
+  :hook ((ghostel-mode . with-editor-mode)
+         (eat-mode . with-editor-mode)
+         (vterm-mode . with-editor-mode)
+         (eshell-mode . with-editor-mode)))
 
 ;; --------- CLAUDE ----------
 (use-package ghostel
