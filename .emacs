@@ -26,19 +26,8 @@
 (set-default-coding-systems 'utf-8)
 ;; no bell
 (setq ring-bell-function 'ignore)
-;; no-littering: organize auto-generated files
-(use-package no-littering
-  :straight (no-littering :type git :host github
-                          :repo "emacscollective/no-littering")
-  :config
-  ;; Store backup files in var/backup/
-  (setq backup-by-copying t
-        delete-old-versions t
-        kept-new-versions 6
-        kept-old-versions 2
-        version-control t)
-  ;; Configure auto-save and backup with no-littering paths
-  (no-littering-theme-backups))
+;; no-littering now lives after the straight.el bootstrap below, since
+;; `use-package' cannot see the `:straight' keyword until then.
 ;; C-x U / L
 (put 'upcase-region 'disabled nil)
 (put 'downcase-region 'disabled nil)
@@ -117,6 +106,23 @@
 (straight-use-package 'use-package)
 (setq straight-use-package-by-default t)
 
+;; ---------- NO-LITTERING ----------
+;; Organize auto-generated files.  Must come first among the use-package forms
+;; so later packages' state files land under var/ and etc/ too.
+(use-package no-littering
+  :straight (no-littering :type git :host github
+                          :repo "emacscollective/no-littering")
+  :demand t
+  :config
+  ;; Store backup files in var/backup/
+  (setq backup-by-copying t
+        delete-old-versions t
+        kept-new-versions 6
+        kept-old-versions 2
+        version-control t)
+  ;; Configure auto-save and backup with no-littering paths
+  (no-littering-theme-backups))
+
 ;; ---------- YAML-MODE ----------
 (use-package yaml-mode
   :ensure t
@@ -164,30 +170,16 @@
 
 ;; ---------- TTY CHILD FRAMES ----------
 ;; https://lists.gnu.org/r/emacs-devel/2024-10/msg00491.html
-;; Gerd Möllmann's tty-child-frames support lets posframe-based
-;; popups (corfu, vertico-posframe, transient-posframe,
-;; which-key-posframe) work on ttys, not just GUI frames.
-;; Only relevant if/when this Emacs is built from the
-;; scratch/tty-child-frames branch (or once merged upstream).
-;; Placed before the vertico/corfu/posframe use-package blocks below
-;; so the overrides are in place before any of those modes are enabled.
+;; Gerd Möllmann's tty-child-frames support lets posframe-based popups (corfu,
+;; vertico-posframe, transient-posframe, which-key-posframe) work on ttys, not
+;; just GUI frames.  As of Emacs 31 this is merged and `tty-child-frames' is
+;; provided, and both posframe and corfu check for it themselves -- so the
+;; `posframe-workable-p' / `corfu--popup-support-p' overrides this config used
+;; to carry are gone.  They were byte-for-byte copies of upstream, and
+;; redefining corfu's `cl-defgeneric' also discarded any `cl-defmethod' that
+;; another package (corfu-terminal and friends) had registered on it.
+;; Only the frame-parameter tuning below is still ours.
 (when (>= emacs-major-version 31)
-  (with-eval-after-load 'posframe
-    (defun posframe-workable-p ()
-      "Test posframe workable status."
-      (and (>= emacs-major-version 26)
-           (not (or noninteractive
-                     emacs-basic-display
-                     (not (or (display-graphic-p)
-                              (featurep 'tty-child-frames)))
-                     (eq (frame-parameter (selected-frame) 'minibuffer) 'only))))))
-
-  (with-eval-after-load 'corfu
-    (cl-defgeneric corfu--popup-support-p ()
-      "Return non-nil if child frames are supported."
-      (or (display-graphic-p)
-          (featurep 'tty-child-frames))))
-
   (with-eval-after-load 'vertico-posframe
     (push '(tty-non-selected-cursor . t) vertico-posframe-parameters)
     (push '(undecorated . nil) vertico-posframe-parameters))
@@ -205,6 +197,12 @@
       (use-package posframe
 	:ensure t)
       
+      ;; consult commands routinely prompt from inside a minibuffer; without
+      ;; this they fail with "Command attempted to use minibuffer while in
+      ;; minibuffer".
+      (setq enable-recursive-minibuffers t)
+      (minibuffer-depth-indicate-mode 1)
+
       (use-package vertico
         :ensure t
         :init
@@ -218,9 +216,16 @@
         :config
         (vertico-posframe-mode 1))
 
+      ;; Sorting and frecency only.  With filtering left on (the default),
+      ;; `vertico-prescient-mode' advises `vertico--setup' to overwrite
+      ;; `completion-styles' with `(prescient basic)' and to null out
+      ;; `completion-category-defaults', which silently disables the orderless
+      ;; config below and loses out-of-order word matching.
       (use-package vertico-prescient
         :ensure t
         :after vertico
+        :init
+        (setq vertico-prescient-enable-filtering nil)
         :config
         (vertico-prescient-mode t)
         (prescient-persist-mode t))
@@ -314,11 +319,21 @@ Returns completion data in the format expected by completion-at-point-functions.
 
 ;; Setup completion-at-point in minibuffer for shell commands
 (defun my/setup-shell-completion-minibuffer ()
-  "Setup shell completion in minibuffer."
+  "Setup shell completion in minibuffer.
+Installs a fresh keymap layered over the current one rather than calling
+`local-set-key'.  In a minibuffer `current-local-map' is the *shared*
+`minibuffer-local-map' (or `minibuffer-local-completion-map'), so
+`local-set-key' mutates it in place and permanently rebinds TAB for every
+later minibuffer in the session, breaking `vertico-insert' and filename
+completion."
   (setq-local completion-at-point-functions
               (list #'my/shell-complete-command))
-  ;; Bind TAB to trigger completion
-  (local-set-key (kbd "TAB") #'completion-at-point))
+  (use-local-map
+   (make-composed-keymap
+    (let ((map (make-sparse-keymap)))
+      (define-key map (kbd "TAB") #'completion-at-point)
+      map)
+    (current-local-map))))
 
 ;; Advice to add shell completion to commands
 (defun my/shell-command-with-completion (orig-fun &rest args)
@@ -944,11 +959,19 @@ Returns completion data in the format expected by completion-at-point-functions.
 
 
 ;; ---------- TRAMP ----------
-(use-package counsel-tramp
-  :ensure t
-  :config
-  (setq tramp-default-method "ssh")
-  (define-key global-map (kbd "C-c C-s") 'counsel-tramp))
+(setq tramp-default-method "ssh")
+
+;; counsel-tramp does `(require 'counsel)', which drags the whole ivy stack in
+;; alongside vertico.  It also had no deferring keyword, so use-package loaded
+;; it at startup.  On Emacs 31 use consult-tramp instead; keep counsel-tramp
+;; (deferred) on older builds where ivy/counsel is the completion UI anyway.
+(if (>= emacs-major-version 31)
+    (use-package consult-tramp
+      :straight (consult-tramp :type git :host github :repo "Ladicle/consult-tramp")
+      :bind ("C-c C-s" . consult-tramp))
+  (use-package counsel-tramp
+    :ensure t
+    :bind ("C-c C-s" . counsel-tramp)))
 
 ;; --------- CLAUDE ----------
 (use-package ghostel
