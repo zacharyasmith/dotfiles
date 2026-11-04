@@ -89,7 +89,10 @@
                   1 font-lock-warning-face t))))))
 
 ;; install straight
-(setq warning-minimum-level :emergency)
+;; Was :emergency, which suppressed every byte-compile and native-comp warning
+;; and meant real breakage was only visible under --debug-init.  :error still
+;; hides the routine package-build noise.
+(setq warning-minimum-level :error)
 (defvar bootstrap-version)
 (let ((bootstrap-file
        (expand-file-name
@@ -143,9 +146,15 @@
          ("caddy\\.conf\\'" . caddyfile-mode)))
 
 ;; ---------- HIGHLIGHT-INDENTATION ----------
+;; `highlight-indentation-mode' is a MINOR mode.  It used to be registered with
+;; two `:mode' keywords, which put it in `auto-mode-alist' as the *major* mode
+;; for .yaml/.yml/.py -- so opening a YAML file landed you in
+;; highlight-indentation-mode instead of yaml-mode, and treesit-auto never got
+;; the chance to remap yaml-mode to yaml-ts-mode.  Same for Python.
+;; Use `:hook', and hook the -base- modes so the ts variants are covered too.
 (use-package highlight-indentation
-  :mode (("\\.ya?ml\\'" . highlight-indentation-mode))
-  :mode (("\\.py\\'" . highlight-indentation-mode))
+  :ensure t
+  :hook ((yaml-mode yaml-ts-mode python-base-mode) . highlight-indentation-mode)
   :config
     (set-face-background 'highlight-indentation-face "#808075")
     (set-face-background 'highlight-indentation-current-column-face "#BFBFB0")
@@ -494,10 +503,14 @@ completion."
   (with-eval-after-load 'winum
     (define-key winum-keymap (kbd "M-0") #'treemacs-select-window))
   :config
-  (treemacs-resize-icons 18)
+  ;; Only meaningful for image icons on a graphical frame.  Unconditionally
+  ;; calling it printed "[Treemacs] Icons cannot be resized without image
+  ;; transforms or imagemagick support." on every tty startup -- and this config
+  ;; uses treemacs-nerd-icons (text glyphs), which cannot be resized at all.
+  (when (and (display-graphic-p) (image-transforms-p))
+    (treemacs-resize-icons 18))
   (treemacs-follow-mode t)
   (treemacs-filewatch-mode t)
-  (treemacs-git-commit-diff-mode t)
   (treemacs-fringe-indicator-mode 'always)
   (require 'treemacs-project-follow-mode)
   (treemacs-project-follow-mode t)
@@ -601,16 +614,18 @@ completion."
 	    (local-set-key (kbd "C-x C-s") 'json-save-buffer)))
 
 ;; ----------- PYTHON MODE ---------------
-;; (use-package python-pytest)
-(defun python-save-buffer ()
-    "Format before save."
-    (interactive)
-    (lsp-format-buffer)
-    (save-buffer))
-(add-hook 'python-mode-hook
-	  (lambda ()
-	    (local-set-key (kbd "C-c C-t") 'python-pytest-dispatch)
-	    (local-set-key (kbd "C-x C-s") 'save-buffer)))
+(use-package python-pytest
+  :ensure t
+  ;; Hook on `python-base-mode-hook', the common parent of python-mode and
+  ;; python-ts-mode: with `global-treesit-auto-mode' on, .py files often open in
+  ;; python-ts-mode, and a python-mode-hook never fires for them.
+  :bind (:map python-base-mode-map
+              ("C-c C-t" . python-pytest-dispatch)))
+
+;; `python-save-buffer' used to be defined here but was never bound to
+;; anything -- C-x C-s was bound to plain `save-buffer' -- so it has been
+;; dropped.  Formatting on save is handled per-language by lsp/clang-format.
+
 ;; language server plugin
 (require 'project)
 (use-package pyvenv
@@ -629,8 +644,11 @@ completion."
 	(pyvenv-activate venv-path)
 	(message "Activated uv virtual environment: %s" venv-path))))
   )
-(use-package python-mode
-  :mode "\\.py\\'")
+;; The external python-mode.el package used to be installed here.  It shadows
+;; built-in python.el and fights `treesit-auto' over which mode owns .py, so
+;; python-ts-mode would sometimes win and the python-mode hooks never ran.
+;; Built-in python.el / python-ts-mode is the one in use now.
+
 ;; ---------- MARKDOWN ----------
 (use-package markdown-mode
   :ensure t
@@ -662,8 +680,9 @@ completion."
   :ensure t
   :init (global-flycheck-mode)
   :config
-  ;; Disable flycheck-ruff for Python - ruff-lsp provides diagnostics via LSP
-  (add-hook 'python-mode-hook
+  ;; Disable flycheck-ruff for Python - ruff-lsp provides diagnostics via LSP.
+  ;; Hooked on `python-base-mode-hook' so it also applies to python-ts-mode.
+  (add-hook 'python-base-mode-hook
             (lambda ()
               (setq-local flycheck-disabled-checkers '(python-ruff)))))
 
@@ -874,16 +893,18 @@ completion."
 
 ;; -------- ORG MODE ----------------
 ;; org mode
+;; `:ensure org-plus-contrib' used to be here.  org-plus-contrib was removed
+;; from ELPA in 2021 and is a dead recipe; org itself is already installed by
+;; the `(straight-use-package 'org)' call near the top of this file.
 (use-package org
   :mode (("\\.org$" . org-mode))
-  :ensure org-plus-contrib
   :config
   (setq org-todo-keywords
 	'((sequence "TODO" "IN-PROGRESS" "VERIFY" "|" "DONE" "DELEGATED" "CANCELLED"))
 	org-directory (expand-file-name "~/org/"))
-  (load-library "find-lisp")
+  (require 'find-lisp)
   (setq org-agenda-files
-	(find-lisp-find-files org-directory "\.org$")
+	(find-lisp-find-files org-directory "\\.org$")
 	org-babel-python-command "python3")
   (org-babel-do-load-languages
    'org-babel-load-languages
@@ -892,7 +913,7 @@ completion."
      (python . t))))
 
 ;; Set the browser in emacs
-(if (getenv "BROWSER")
+(when (getenv "BROWSER")
     (setq browse-url-generic-program
 	  (executable-find (getenv "BROWSER"))
 	  browse-url-browser-function 'browse-url-generic))
@@ -933,7 +954,9 @@ completion."
   (setq lsp-enable-snippet t)
   (define-key yas-minor-mode-map (kbd "<tab>") nil)
   (define-key yas-minor-mode-map (kbd "TAB") nil)
-  :bind (("C-M-y" . company-yasnippet)
+  ;; "C-M-y" used to be bound to `company-yasnippet', which does not exist on
+  ;; Emacs 31 -- company is only installed on the pre-31 branch above.
+  :bind (("C-M-y" . yas-insert-snippet)
 	 ("C-c y" . yas-expand))
   )
 (use-package yasnippet-snippets
@@ -965,12 +988,13 @@ completion."
    (json-mode . rainbow-delimiters-mode)))
 
 ;; ---------- TREE SITTER ----------
-(use-package tree-sitter
-  :ensure t)
-(use-package tree-sitter-langs
-  :ensure t
-  :config
-  (global-tree-sitter-mode -1))
+;; The legacy elisp-tree-sitter stack (tree-sitter + tree-sitter-langs) used to
+;; be installed here only to be switched off again with
+;; (global-tree-sitter-mode -1).  It cost a dynamic-module download check and a
+;; grammar-bundle check on every startup ("tsc-dyn-get: ...",
+;; "tree-sitter-langs: Grammar bundle v0.13.73 was already installed") for no
+;; benefit.  Built-in treesit via `treesit-auto' is the live stack -- see the
+;; TREESITTER section above.
 
 ;; ---------- HURL ------------
 (straight-use-package
@@ -1151,19 +1175,17 @@ where a side window would crowd out the rest of the editor.")
   (eat-update-semi-char-mode-map))
 
 ;; ---------- EPUB ----------
+;; Had `:config' twice with `:mode' wedged between them, and set
+;; `visual-fill-column-center-text' without visual-fill-column installed.
 (use-package nov
-  :demand t
-  :config
-  :mode "\\.epub\\'"
+  :ensure t
+  :mode ("\\.epub\\'" . nov-mode)
   :config
   (defun my-nov-font-setup ()
     (face-remap-add-relative 'variable-pitch :family "DejaVu Serif"
                              :height 1.0))
-  (setq
-   nov-text-width 80
-   visual-fill-column-center-text t)
-  (add-hook 'nov-mode-hook 'my-nov-font-setup)
-  )
+  (setq nov-text-width 80)
+  (add-hook 'nov-mode-hook 'my-nov-font-setup))
 
 (defun paste-from-system-clipboard ()
   (interactive)
@@ -1214,13 +1236,19 @@ Works over ssh, mosh, and tmux (with `set-clipboard on') without X."
 (global-set-key (kbd "C-c v") 'paste-from-system-clipboard)
 
 ;; ---------- RAINBOW ----------
+;; `rainbow-csv-mode' is a MINOR mode, but it used to be the `:mode' entry for
+;; .csv -- so opening a CSV made it the major mode and csv-mode never ran.
+;; csv-mode owns the file extension; rainbow-csv layers colour on top of it.
 (use-package csv-mode
-  :defer t)
+  :ensure t
+  :mode (("\\.csv\\'" . csv-mode)
+         ("\\.tsv\\'" . tsv-mode)))
+
 (straight-use-package
  '(rainbow-csv-mode :type git :host github :repo "emacs-vs/rainbow-csv"))
-(use-package rainbow-csv-mode
-  :defer t
-  :mode ("\\.csv\\'" . rainbow-csv-mode))
+(use-package rainbow-csv
+  :straight nil                         ; installed above; feature is rainbow-csv
+  :hook ((csv-mode tsv-mode) . rainbow-csv-mode))
 
 ;; ---------- HEXL ----------
 (use-package nhexl-mode
@@ -1365,9 +1393,22 @@ highlighting and displayed in a read-only buffer (special-mode)."
 
 
 ;; STARTUP!
-(add-hook 'after-init-hook (lambda ()
-  (org-agenda-list)
-  (delete-other-windows)))
+;; Opening the agenda on every launch costs a recursive scan of ~/org plus a
+;; git call per agenda file ("Waiting for git..." in the startup log), and it
+;; leaves point at the end of the agenda buffer, which is where the trailing
+;; "line-move: End of buffer" / "Mark set" messages came from.  Skip it for
+;; daemons and for non-interactive launches; set `my/open-agenda-at-startup' to
+;; nil to skip it entirely.
+(defvar my/open-agenda-at-startup t
+  "Whether to show the org agenda after init.")
+
+(add-hook 'after-init-hook
+          (lambda ()
+            (when (and my/open-agenda-at-startup
+                       (not noninteractive)
+                       (not (daemonp)))
+              (org-agenda-list)
+              (delete-other-windows))))
 
 (use-package breadcrumb
   :ensure t

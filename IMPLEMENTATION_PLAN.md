@@ -13,7 +13,7 @@
 **Goal**: one copy of each package on `load-path`
 **Success Criteria**: no `Unable to activate package 'eca'` / `s-1.12.0 is unavailable` at startup
 **Tests**: `--debug-init` startup log clean; `(locate-library "vertico")` points into straight/build
-**Status**: Not Started
+**Status**: Complete
 
 - add `early-init.el` with `package-enable-at-startup nil`
 - `:vc` -> `:straight` for no-littering and difftastic
@@ -24,7 +24,7 @@
 **Goal**: vertico behaves identically every invocation
 **Success Criteria**: TAB in minibuffer still completes after running `M-!`; out-of-order word matching works
 **Tests**: `M-!` then `C-x C-f` and press TAB; `M-x` with "fi fi" matching find-file
-**Status**: Not Started
+**Status**: Complete
 
 - stop `my/setup-shell-completion-minibuffer` mutating shared `minibuffer-local-map`
 - resolve prescient vs orderless (`vertico-prescient-enable-filtering nil`)
@@ -35,7 +35,7 @@
 **Goal**: `$EDITOR` from a ghostel buffer opens in the parent Emacs, not nested inside the buffer
 **Success Criteria**: claude-code prompt edit opens a window in the outer Emacs and blocks until `C-x #`
 **Tests**: in a ghostel buffer run `$EDITOR /tmp/x`; confirm no nested tty Emacs
-**Status**: Not Started
+**Status**: Complete
 
 - `server-start` in `.emacs`
 - `with-editor-export-editor` on `ghostel-mode-hook`
@@ -45,7 +45,7 @@
 **Goal**: remove bindings and setqs that silently do nothing or break a mode
 **Success Criteria**: byte-compiles without warnings; dired `i`/`r`/`t` work again
 **Tests**: open dired, press `t`; `C-x C-s` in a .json buffer; `M-1` in an eat buffer
-**Status**: Not Started
+**Status**: Complete
 
 - dired `C-S i` -> valid chord (currently binds plain `i`/`r`/`t`)
 - `eat-semi-char-non-bound-key` -> `...-keys`
@@ -58,11 +58,26 @@
 - missing `(require 's)`
 - `xterm-extra-capabilities` contradiction
 
+## Stage 7: File/mode associations
+**Goal**: .yaml opens in yaml-ts-mode, .csv in csv-mode
+**Success Criteria**: find-file on each lands in the right major mode with the
+right minor modes layered on
+**Tests**: verified in batch: t.yaml -> yaml-ts-mode + highlight-indentation;
+t.csv -> csv-mode + rainbow-csv-mode; t.py -> python-mode + highlight-indentation
+**Status**: Complete
+
+- `highlight-indentation-mode` is a minor mode but was registered with `:mode`,
+  so it became the *major* mode for .yaml/.yml/.py -> `:hook` instead.  This was
+  also why treesit-auto never remapped yaml-mode to yaml-ts-mode: its advice on
+  `set-auto-mode-0` only fires once auto-mode-alist resolves to a recipe mode.
+- same bug for `rainbow-csv-mode` on .csv -> csv-mode owns the extension,
+  rainbow-csv layers on via a hook
+
 ## Stage 6: Cleanup
 **Goal**: quieter, faster startup
 **Success Criteria**: no tsc-dyn-get / grammar-bundle / treemacs-resize lines in startup log
 **Tests**: `emacs --debug-init -nw` log
-**Status**: Not Started
+**Status**: Complete
 
 - drop legacy `tree-sitter` + `tree-sitter-langs`
 - drop external `python-mode` package
