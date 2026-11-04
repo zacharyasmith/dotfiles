@@ -973,6 +973,29 @@ completion."
     :ensure t
     :bind ("C-c C-s" . counsel-tramp)))
 
+;; --------- SERVER ----------
+;; Needed so emacsclient (and `with-editor' below) can hand files to *this*
+;; Emacs instead of starting a new one.
+(require 'server)
+(unless (server-running-p)
+  (server-start))
+
+;; --------- WITH-EDITOR ----------
+;; Keep $EDITOR from opening a *nested* terminal Emacs inside a ghostel buffer.
+;; A plain "emacsclient -nw" makes a new tty frame on the terminal it was
+;; invoked from -- which, inside ghostel, is the ghostel pty.  The result is an
+;; Emacs painted inside an Emacs buffer, with the outer Emacs swallowing every
+;; keystroke.  `with-editor-export-editor' instead exports an $EDITOR that hands
+;; the file to this Emacs via the server and blocks the child until C-x #.
+;; So e.g. claude-code's prompt editor opens a normal window here.
+(use-package with-editor
+  :ensure t
+  :hook ((ghostel-mode . with-editor-export-editor)
+         (eat-mode . with-editor-export-editor)
+         (vterm-mode . with-editor-export-editor)
+         (term-exec . with-editor-export-editor)
+         (eshell-mode . with-editor-export-editor)))
+
 ;; --------- CLAUDE ----------
 (use-package ghostel
   :ensure t

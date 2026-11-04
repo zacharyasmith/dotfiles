@@ -104,7 +104,18 @@ if [ -x /usr/bin/dircolors ]; then
 fi
 
 if [[ "$INSIDE_EMACS" = 'ghostel' ]]; then
-    # Open a file in Emacs from the terminal
+    # Never use "emacsclient -nw" in here.  -nw makes a new *tty* frame on the
+    # terminal it was invoked from, and that terminal is this ghostel pty -- so
+    # you get a nested Emacs painted inside an Emacs buffer, with the outer
+    # Emacs eating your keybindings.  Plain emacsclient opens the file in the
+    # parent Emacs and blocks until C-x #, which is what $EDITOR needs.
+    # with-editor-export-editor in .emacs normally sets this already; this is
+    # the fallback for shells it did not touch.
+    export EDITOR="emacsclient"
+    export VISUAL="emacsclient"
+
+    # Open a file in Emacs from the terminal.  Returns immediately, so these are
+    # for interactive use only -- they are not usable as $EDITOR.
     e()   { ghostel_cmd find-file-other-window "$@"; }
 
     # Open dired in another window
