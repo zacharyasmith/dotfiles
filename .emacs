@@ -142,7 +142,6 @@
 (key-chord-mode 1)
 
 ;; ---------- THEME ----------
-;; zenburn https://github.com/bbatsov/zenburn-emacs
  (use-package gruvbox-theme
    :ensure t
    :config
@@ -965,23 +964,23 @@ Returns completion data in the format expected by completion-at-point-functions.
          ("M-n" . (lambda () (interactive) (ghostel-send-key "n" "ctrl")))
          :map project-prefix-map
          ("m" . ghostel-project)
-         ("M" . ghostel-project-list-buffers))
-  :config
-  (setq
-   ghostel-term "xterm-256color")
-  (defun my/ghostel-send-C-k-and-kill ()
+         ("M" . ghostel-project-list-buffers)))
+
+(setq
+   ghostel-term "xterm-direct")
+(defun my/ghostel-send-C-k-and-kill ()
     "Send `C-k' to ghostel.
 Like normal Emacs `C-k'.  Kill to end of line and put content in kill-ring."
     (interactive)
     (kill-ring-save (point) (line-end-position))
     (ghostel-send-key "k" "ctrl"))
 
-  (add-to-list 'project-switch-commands '(ghostel-project "Ghostel") t)
-  (add-to-list 'project-switch-commands '(ghostel-project-list-buffers "Ghostel buffers") t)
-  (add-to-list 'ghostel-eval-cmds '("magit-status-setup-buffer" magit-status-setup-buffer))
-  (ghostel-compile-global-mode)
-  (ghostel-eshell-visual-command-mode)
-  (ghostel-comint-global-mode))
+(add-to-list 'project-switch-commands '(ghostel-project "Ghostel") t)
+(add-to-list 'project-switch-commands '(ghostel-project-list-buffers "Ghostel buffers") t)
+;; (add-to-list 'ghostel-eval-cmds '("magit-status-setup-buffer" magit-status-setup-buffer))
+(ghostel-compile-global-mode)
+(ghostel-eshell-visual-command-mode)
+(ghostel-comint-global-mode)
 (use-package claude-code-ide
   :straight (:type git :host github :repo "manzaltu/claude-code-ide.el")
   :bind (("C-c '" . claude-code-ide-menu)
@@ -1321,7 +1320,10 @@ highlighting and displayed in a read-only buffer (special-mode)."
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  '(package-vc-selected-packages
-   '((difftastic :url "https://github.com/pkryger/difftastic.el.git"))))
+   '((difftastic :url "https://github.com/pkryger/difftastic.el.git")))
+ '(safe-local-variable-directories
+   '("/opt/trueanomaly/melange/ground/"
+     "/opt/trueanomaly/flight_software/FSW_Tools/Functional_Tests/")))
 
 (provide '.emacs)
 ;;; .emacs ends here
