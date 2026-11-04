@@ -14,7 +14,9 @@
             (when (fboundp 'xterm-osc-clipboard-mode)
 	      (xterm-osc-clipboard-mode -1))))
 
-(setq package-enable-at-startup nil)
+;; package.el is disabled in early-init.el (it must be set before
+;; `package-activate-all' runs).  straight.el manages everything here; never use
+;; use-package's `:vc' keyword, which pulls package.el back in.
 
 ;; Add ~/.local/bin to exec-path for uv-installed tools (basedpyright, ruff, etc.)
 (add-to-list 'exec-path (expand-file-name "~/.local/bin"))
@@ -26,9 +28,8 @@
 (setq ring-bell-function 'ignore)
 ;; no-littering: organize auto-generated files
 (use-package no-littering
-    :vc (:url "https://github.com/emacscollective/no-littering"
-	    :rev :newest)
-  :ensure t
+  :straight (no-littering :type git :host github
+                          :repo "emacscollective/no-littering")
   :config
   ;; Store backup files in var/backup/
   (setq backup-by-copying t
@@ -354,9 +355,7 @@ Returns completion data in the format expected by completion-at-point-functions.
 (use-package el-mock
   :ensure t)
 (use-package difftastic
-  :ensure t
-  :vc (:url "https://github.com/pkryger/difftastic.el.git"
-	    :rev :newest)
+  :straight (difftastic :type git :host github :repo "pkryger/difftastic.el")
   :config (difftastic-bindings-mode))
 
 ;; ---------- PROJECTILE ----------
@@ -1314,22 +1313,13 @@ highlighting and displayed in a read-only buffer (special-mode)."
 (put 'dockerfile-image-name 'safe-local-variable #'stringp)
 (put 'projectile-project-root 'safe-local-variable #'stringp)
 
-(custom-set-variables
- ;; custom-set-variables was added by Custom.
- ;; If you edit it by hand, you could mess it up, so be careful.
- ;; Your init file should contain only one such instance.
- ;; If there is more than one, they won't work right.
- '(package-vc-selected-packages
-   '((difftastic :url "https://github.com/pkryger/difftastic.el.git")))
- '(safe-local-variable-directories
-   '("/opt/trueanomaly/melange/ground/"
-     "/opt/trueanomaly/flight_software/FSW_Tools/Functional_Tests/")))
+;; ---------- CUSTOM FILE ----------
+;; Keep Custom's writes out of this file: it is tracked in dotfiles, and
+;; machine-specific values (e.g. `safe-local-variable-directories' pointing at
+;; work checkouts) do not belong in version control.
+(setq custom-file (expand-file-name "custom-vars.el" user-emacs-directory))
+(when (file-exists-p custom-file)
+  (load custom-file))
 
 (provide '.emacs)
 ;;; .emacs ends here
-(custom-set-faces
- ;; custom-set-faces was added by Custom.
- ;; If you edit it by hand, you could mess it up, so be careful.
- ;; Your init file should contain only one such instance.
- ;; If there is more than one, they won't work right.
- )

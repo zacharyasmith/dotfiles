@@ -141,6 +141,29 @@
         state: link
         force: true
 
+    - name: Link .tmux.conf into home
+      ansible.builtin.file:
+        src: "{{ dotfiles }}/.tmux.conf"
+        dest: "{{ home }}/.tmux.conf"
+        state: link
+        force: true
+
+    - name: Create ~/.emacs.d
+      ansible.builtin.file:
+        path: "{{ home }}/.emacs.d"
+        state: directory
+        mode: "0755"
+
+    # Must be a real early-init.el: `package-enable-at-startup' is only read
+    # before `package-activate-all' runs, so setting it in ~/.emacs is too late
+    # and package.el ends up shadowing the straight.el builds.
+    - name: Link early-init.el into ~/.emacs.d
+      ansible.builtin.file:
+        src: "{{ dotfiles }}/early-init.el"
+        dest: "{{ home }}/.emacs.d/early-init.el"
+        state: link
+        force: true
+
     - name: Create ~/.emacs.d/custom
       ansible.builtin.file:
         path: "{{ home }}/.emacs.d/custom"
