@@ -769,7 +769,6 @@ completion."
   :config
   (define-key lsp-mode-map (kbd "C-c l") lsp-command-map)
 
-  (require 'lsp-clients)
   (setq
    lsp-log-io nil
    lsp-idle-delay 0.500
@@ -1036,15 +1035,15 @@ completion."
 ;; A plain "emacsclient -nw" makes a new tty frame on the terminal it was
 ;; invoked from -- which, inside ghostel, is the ghostel pty.  The result is an
 ;; Emacs painted inside an Emacs buffer, with the outer Emacs swallowing every
-;; keystroke.  `with-editor-mode' exports an $EDITOR that hands the file to this
-;; Emacs via the server and blocks the child until C-x #.
-;; So e.g. claude-code's prompt editor opens a normal window here.
+;; keystroke.
+;;
+;; The automatic hooks (with-editor-mode on ghostel-mode-hook etc.) were causing
+;; ghostel buffers to hang on startup, so with-editor is installed but not
+;; auto-enabled.  The manual fallback in .bashrc (export EDITOR=emacsclient in
+;; the INSIDE_EMACS=ghostel branch) handles the $EDITOR case without hooks.
+;; If you need with-editor in a specific buffer, run M-x with-editor-mode there.
 (use-package with-editor
-  :ensure t
-  :hook ((ghostel-mode . with-editor-mode)
-         (eat-mode . with-editor-mode)
-         (vterm-mode . with-editor-mode)
-         (eshell-mode . with-editor-mode)))
+  :ensure t)
 
 ;; --------- CLAUDE ----------
 (use-package ghostel
@@ -1409,9 +1408,26 @@ highlighting and displayed in a read-only buffer (special-mode)."
               (org-agenda-list)
               (delete-other-windows))))
 
+;; breadcrumb and lsp-mode's own `lsp-headerline-breadcrumb-mode' both write to
+;; `header-line-format', so in an LSP buffer you get two breadcrumbs fighting in
+;; the top bar.  Hand the header line to lsp once it has attached
+;; (`lsp-configure-hook'), and give it back if lsp detaches
+;; (`lsp-unconfigure-hook', e.g. after `lsp-workspace-shutdown').
 (use-package breadcrumb
   :ensure t
-  :config (breadcrumb-mode t))
+  :config
+  (breadcrumb-mode t)
+
+  (defun my/breadcrumb-off-for-lsp ()
+    "Disable breadcrumb in this buffer; lsp provides its own header line."
+    (breadcrumb-local-mode -1))
+
+  (defun my/breadcrumb-on-after-lsp ()
+    "Re-enable breadcrumb in this buffer after lsp detaches."
+    (breadcrumb-local-mode 1))
+
+  (add-hook 'lsp-configure-hook #'my/breadcrumb-off-for-lsp)
+  (add-hook 'lsp-unconfigure-hook #'my/breadcrumb-on-after-lsp))
 
 ;; ---------- MACHINE-LOCAL CONFIG ----------
 ;; Load ~/.emacs.d/custom/init.el if present (work-specific packages/settings)

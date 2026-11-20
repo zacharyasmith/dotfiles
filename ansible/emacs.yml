@@ -5,6 +5,11 @@
 # flags of the last successful install. When it matches, the clone and
 # build are skipped entirely.
 ---
+- name: Read gcc major version
+  ansible.builtin.command: gcc -dumpversion
+  register: emacs_gcc_version
+  changed_when: false
+
 - name: Install Emacs build dependencies
   become: true
   ansible.builtin.apt:
@@ -12,7 +17,7 @@
       - build-essential
       - autoconf
       - texinfo
-      - libgccjit-15-dev   # must match the system gcc major version
+      - "libgccjit-{{ emacs_gcc_version.stdout | split('.') | first }}-dev"
       - libncurses-dev
       - libgnutls28-dev
       - libtree-sitter-dev

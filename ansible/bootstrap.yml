@@ -12,7 +12,7 @@
   vars:
     # Ubuntu 26.04's default sudo is sudo-rs, which rewrites the password
     # prompt so Ansible never recognizes it. Classic sudo ships as sudo.ws.
-    ansible_become_exe: /usr/bin/sudo.ws
+    ansible_become_exe: "{{ '/usr/bin/sudo.ws' if '/usr/bin/sudo.ws' is file else '/usr/bin/sudo' }}"
     home: "{{ ansible_facts.user_dir }}"
     user: "{{ ansible_facts.user_id }}"
     dotfiles: "{{ playbook_dir | dirname }}"
@@ -23,7 +23,6 @@
       - bat
       - eza
       - fzf
-      - starship
       - tree
       - btop
       - fastfetch
@@ -119,6 +118,11 @@
         remote_src: true
         creates: "{{ home }}/.cargo/bin/cargo-binstall"
 
+    - name: Install starship
+      ansible.builtin.command: "{{ home }}/.cargo/bin/cargo-binstall -y starship"
+      args:
+        creates: "{{ home }}/.cargo/bin/starship"
+
     - name: Install uv
       ansible.builtin.command: cargo install --locked uv
       args:
@@ -126,6 +130,7 @@
 
     - name: Build and install Emacs
       ansible.builtin.import_tasks: emacs.yml
+      tags: emacs
 
     - name: Link .bashrc into home
       ansible.builtin.file:

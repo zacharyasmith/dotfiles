@@ -75,6 +75,21 @@
   (should (eq 0 (string-match-p "\\c.\\c^+"
                                 (tty-image--placeholder-text 1 2)))))
 
+(ert-deftest tty-image-test-every-row-diacritic-composes-onto-placeholder ()
+  ;; Script-specific rules (Hebrew, Arabic, ...) must not keep rows
+  ;; past 34 from composing, or the image is cropped there.
+  (let ((failed
+         (cl-loop for d across tty-image--diacritics
+                  for s = (string tty-image--placeholder d #x0305)
+                  unless (cl-some (lambda (rule)
+                                    (and (vectorp rule) (stringp (aref rule 0))
+                                         (eq 1 (aref rule 1))
+                                         (eq 0 (string-match-p
+                                                (concat "\\`" (aref rule 0)) s))))
+                                  (aref composition-function-table d))
+                  collect (format "U+%04X" d))))
+    (should (null failed))))
+
 (ert-deftest tty-image-test-placeholder-rejects-too-many-rows ()
   (should-error (tty-image--placeholder-text 1 (1+ (length tty-image--diacritics)))))
 

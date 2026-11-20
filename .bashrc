@@ -199,11 +199,6 @@ alias emt="$EDITOR"
 alias buildenv="docker run --rm -it -v /opt/trustedspace/tsdam-manager-cpp:/home/ubuntu/tsdam -v tmp:/data/db buildenvironment"
 alias tsu="source ~/projects/trusted-space-utilities/.env && uv run -w ~/projects/trusted-space-utilities/"
 
-if [ -f ~/.fzf.bash ]; then
-    source ~/.fzf.bash
-elif command -v fzf >/dev/null; then
-    eval "$(fzf --bash)"
-fi
 # Preview file content using bat (https://github.com/sharkdp/bat)
 export FZF_CTRL_T_OPTS="
   --walker-skip .git,node_modules,target

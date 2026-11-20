@@ -99,6 +99,21 @@ the window are always scaled down to fit."
   "Combining marks encoding row/column numbers 0, 1, 2, ...
 From kitty's gen/rowcolumn-diacritics.txt.")
 
+;; Most marks past row 34 (Hebrew, Arabic, Syriac, Tibetan, ...) have
+;; script-specific composition rules that require a base letter of
+;; their own script.  They never match the placeholder, so those rows
+;; lose their diacritics and the image is cropped.  Put a rule that
+;; composes them onto the placeholder ahead of the script's rules.
+;; A few entries (Ethiopic) hold a legacy function, not a rule list;
+;; those are replaced outright.
+(let ((rule (vector (concat (string tty-image--placeholder) "\\c^+")
+                    1 #'compose-gstring-for-graphic)))
+  (seq-doseq (mark tty-image--diacritics)
+    (let ((rules (aref composition-function-table mark)))
+      (unless (and (listp rules) (member rule rules))
+        (aset composition-function-table mark
+              (cons rule (and (listp rules) rules)))))))
+
 (defconst tty-image--chunk-size 4096
   "Maximum base64 payload bytes per escape code, as the spec requires.")
 
